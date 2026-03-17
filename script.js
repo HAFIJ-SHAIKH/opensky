@@ -309,10 +309,15 @@ const engine = {
 
         try {
             // --- MODEL CONFIGURATION ---
-            // Ensure your model is hosted at hafijshaikh/sky in MLC format
-            const selectedModel = "hafijshaikh/sky"; 
-            // Fallback for testing if your model isn't ready:
-            // const selectedModel = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+            // IMPORTANT: WebLLM requires models to be compiled specifically for it.
+            // You cannot use raw GGUF files. I have switched this to a working model
+            // so you can test the app. 
+            //
+            // To use "hafijshaikh/sky", you must convert it using MLC-LLM 
+            // and host it on Hugging Face with the tag "-MLC".
+            
+            const selectedModel = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"; 
+            // const selectedModel = "hafijshaikh/sky"; // Your model (requires conversion)
 
             this.instance = await webllm.CreateMLCEngine(selectedModel, {
                 initProgressCallback: (report) => {
