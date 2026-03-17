@@ -18,36 +18,26 @@ const ui = {
             previewArea: document.getElementById('upload-preview-area'), sidebar: document.getElementById('sidebar'),
             overlay: document.getElementById('sidebar-overlay'), menuToggle: document.getElementById('menu-toggle'),
             newChatBtn: document.getElementById('new-chat-btn'), sessionList: document.getElementById('session-list'),
-            
-            // Loader Elements
-            loaderOverlay: document.getElementById('loader-overlay'),
-            loaderLog: document.getElementById('loader-log'),
+            loaderOverlay: document.getElementById('loader-overlay'), loaderLog: document.getElementById('loader-log'),
             progressBar: document.getElementById('progress-bar'),
-            
             dot: document.getElementById('status-dot'), text: document.getElementById('status-text'), pill: document.getElementById('status-pill'),
             contextMenu: document.getElementById('context-menu'), ctxEdit: document.getElementById('ctx-edit'), ctxCopy: document.getElementById('ctx-copy')
         };
 
-        // Global Listeners
         document.addEventListener('click', () => this.hideContextMenu());
         window.addEventListener('resize', () => this.hideContextMenu());
 
-        // Sidebar Listeners
         this.dom.menuToggle.addEventListener('click', () => this.toggleSidebar(true));
         this.dom.overlay.addEventListener('click', () => this.toggleSidebar(false));
         this.dom.newChatBtn.addEventListener('click', () => app.newSession());
         
-        // Input Listeners
         this.dom.btn.addEventListener('click', () => app.handleSendClick());
         this.dom.uploadBtn.addEventListener('click', () => this.dom.fileInput.click());
         this.dom.fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
         this.dom.input.addEventListener('input', () => this.resize(this.dom.input));
         this.dom.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); app.handleSendClick(); }});
-        
-        // Status pill click for manual init (optional)
         this.dom.pill.addEventListener('click', () => { if(!engine.isReady) engine.init(); });
 
-        // Context Menu Listeners
         this.dom.ctxEdit.addEventListener('click', () => { this.hideContextMenu(); app.startEdit(this.currentEditIndex); });
         this.dom.ctxCopy.addEventListener('click', () => { 
             this.hideContextMenu(); 
@@ -76,12 +66,11 @@ const ui = {
         }
     },
 
-    // Full screen loader with progress bar
     showInitLoader(show, progress = 0, text = "") {
         const { loaderOverlay, progressBar, loaderLog } = this.dom;
         if (show) {
             loaderOverlay.classList.add('active');
-            document.body.style.overflow = 'hidden'; // Prevent scrolling
+            document.body.style.overflow = 'hidden';
             progressBar.style.width = `${progress}%`;
             if(text) loaderLog.innerText = text;
         } else {
@@ -139,10 +128,7 @@ const ui = {
     formatText(text) {
         let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         html = html.replace(/```(\w*)\s*([\s\S]*?)```/g, (match, lang, code) => {
-            return `<div class="code-container">
-                <button class="copy-code-btn">Copy</button>
-                <pre style="background:var(--code-bg);color:var(--code-text);padding:10px;border-radius:8px;overflow-x:auto;font-family:JetBrains Mono, monospace;font-size:0.85rem;"><code>${code}</code></pre>
-            </div>`;
+            return `<div class="code-container"><button class="copy-code-btn">Copy</button><pre style="background:var(--code-bg);color:var(--code-text);padding:10px;border-radius:8px;overflow-x:auto;font-family:JetBrains Mono, monospace;font-size:0.85rem;"><code>${code}</code></pre></div>`;
         });
         html = html.replace(/`([^`]+)`/g, '<code style="background:rgba(14,165,233,0.1);color:#0ea5e9;padding:2px 4px;border-radius:4px;">$1</code>');
         html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -153,29 +139,22 @@ const ui = {
     showContextMenu(x, y, index) {
         const menu = this.dom.contextMenu;
         const msg = app.sessions[app.currentSessionId].messages[index];
-        
         this.dom.ctxEdit.style.display = msg.role === 'user' ? 'flex' : 'none';
         this.currentEditIndex = index;
-
         menu.classList.add('active');
-        
         const menuRect = menu.getBoundingClientRect();
         const finalX = (x + menuRect.width > window.innerWidth) ? x - menuRect.width : x;
         const finalY = (y + menuRect.height > window.innerHeight) ? y - menuRect.height : y;
-
         menu.style.left = `${finalX}px`;
         menu.style.top = `${finalY}px`;
     },
 
-    hideContextMenu() {
-        this.dom.contextMenu.classList.remove('active');
-    },
+    hideContextMenu() { this.dom.contextMenu.classList.remove('active'); },
 
     createMessageDOM(index, msg) {
         const row = document.createElement('div');
         row.className = `message-row ${msg.role}`;
         row.id = `msg-${index}`;
-
         let attachmentHTML = '';
         if (msg.files && msg.files.length > 0) {
             attachmentHTML = '<div class="attachment-preview">';
@@ -185,24 +164,18 @@ const ui = {
             });
             attachmentHTML += '</div>';
         }
-
         const textContent = msg.content ? this.formatText(msg.content) : '';
         const isLoading = (msg.role === 'sky' && !msg.content);
-
         if (msg.role === 'user') {
             row.innerHTML = `<div class="message-content">${attachmentHTML}<div class="text-body">${textContent}</div></div>`;
         } else {
             row.innerHTML = `<div class="message-content">${isLoading ? '<div class="loader-shifter"></div>' : textContent}</div>`;
         }
-
-        // Interaction Listeners
+        
         row.addEventListener('click', (e) => {
             if(e.target.closest('button')) return; 
-            if(window.innerWidth > 768) {
-                ui.showContextMenu(e.clientX, e.clientY, index);
-            }
+            if(window.innerWidth > 768) ui.showContextMenu(e.clientX, e.clientY, index);
         });
-
         let timer;
         row.addEventListener('touchstart', (e) => {
             if(window.innerWidth <= 768) {
@@ -223,7 +196,6 @@ const ui = {
                 setTimeout(() => e.target.innerText = "Copy", 1500);
             });
         });
-
         return row;
     },
 
@@ -232,17 +204,7 @@ const ui = {
         const row = document.getElementById(`msg-${index}`);
         const contentDiv = row.querySelector('.message-content');
         const oldHTML = contentDiv.innerHTML;
-
-        contentDiv.innerHTML = `
-            <div class="edit-container" style="width:100%;">
-                <textarea class="edit-textarea" style="width:100%; border-radius:8px; border:none; padding:10px; color:#333; min-height:60px;">${msg.content}</textarea>
-                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:5px;">
-                    <button class="edit-cancel" style="background:rgba(0,0,0,0.2); color:white; border:none; padding:5px 10px; border-radius:6px;">Cancel</button>
-                    <button class="edit-save" style="background:rgba(255,255,255,0.9); color:#0ea5e9; border:none; padding:5px 10px; border-radius:6px; font-weight:bold;">Save & Send</button>
-                </div>
-            </div>
-        `;
-
+        contentDiv.innerHTML = `<div class="edit-container" style="width:100%;"><textarea class="edit-textarea" style="width:100%; border-radius:8px; border:none; padding:10px; color:#333; min-height:60px;">${msg.content}</textarea><div style="display:flex; justify-content:flex-end; gap:10px; margin-top:5px;"><button class="edit-cancel" style="background:rgba(0,0,0,0.2); color:white; border:none; padding:5px 10px; border-radius:6px;">Cancel</button><button class="edit-save" style="background:rgba(255,255,255,0.9); color:#0ea5e9; border:none; padding:5px 10px; border-radius:6px; font-weight:bold;">Save & Send</button></div></div>`;
         contentDiv.querySelector('.edit-cancel').addEventListener('click', () => {
             contentDiv.innerHTML = oldHTML;
             row.querySelectorAll('.copy-code-btn').forEach(btn => {
@@ -254,7 +216,6 @@ const ui = {
                 });
             });
         });
-
         contentDiv.querySelector('.edit-save').addEventListener('click', () => {
             const newText = contentDiv.querySelector('.edit-textarea').value.trim();
             if (newText) app.saveEdit(index, newText);
@@ -292,7 +253,6 @@ const ui = {
         });
     }
 };
-
 const engine = {
     instance: null, 
     isReady: false,
@@ -305,19 +265,12 @@ const engine = {
             return false;
         }
         
-        ui.showInitLoader(true, 0, "Initializing Engine...");
+        ui.showInitLoader(true, 0, "Connecting to Hugging Face...");
 
         try {
-            // --- MODEL CONFIGURATION ---
-            // IMPORTANT: WebLLM requires models to be compiled specifically for it.
-            // You cannot use raw GGUF files. I have switched this to a working model
-            // so you can test the app. 
-            //
-            // To use "hafijshaikh/sky", you must convert it using MLC-LLM 
-            // and host it on Hugging Face with the tag "-MLC".
-            
+            // WORKING MODEL (Verified)
             const selectedModel = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"; 
-            // const selectedModel = "hafijshaikh/sky"; // Your model (requires conversion)
+            // const selectedModel = "hafijshaikh/sky"; // Only works if compiled for WebLLM
 
             this.instance = await webllm.CreateMLCEngine(selectedModel, {
                 initProgressCallback: (report) => {
@@ -337,7 +290,6 @@ const engine = {
         } catch (e) {
             console.error(e);
             ui.showInitLoader(true, 0, "Error: " + e.message);
-            // Keep error visible for a few seconds
             await new Promise(r => setTimeout(r, 3000));
             ui.showInitLoader(false);
             return false;
@@ -437,11 +389,8 @@ const app = {
     save() { db.save(this.sessions); ui.renderSessions(this.sessions, this.currentSessionId); },
 
     async handleSendClick() {
-        if(engine.isGenerating) {
-            engine.stop();
-        } else {
-            await this.send();
-        }
+        if(engine.isGenerating) engine.stop();
+        else await this.send();
     },
 
     async saveEdit(index, newText) {
@@ -455,7 +404,6 @@ const app = {
         
         ui.dom.list.appendChild(ui.createMessageDOM(session.messages.length, { role: 'sky', content: '' }));
         
-        // Check if engine needs init before edit
         if (!engine.isReady) {
             const success = await engine.init();
             if (!success) return;
@@ -472,10 +420,9 @@ const app = {
         const files = [...this.currentFiles];
         if (!text && files.length === 0) return;
         
-        // INIT CHECK: This triggers the download overlay if not ready
         if (!engine.isReady) {
             const success = await engine.init();
-            if (!success) return; // Stop if init failed
+            if (!success) return;
         }
 
         const session = this.sessions[this.currentSessionId];
