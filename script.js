@@ -1,32 +1,10 @@
-import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib/module.min.js";
+// ==========================================
+// 1. GLOBALS & UI HELPERS
+// ==========================================
+let engine = null;
+let isGenerating = false;
 
-// ==========================================
-// 1. SANITY CHECKS
-// ==========================================
-// CHECK 1: Are you opening the file correctly?
-if (window.location.protocol === 'file:') {
-    alert("⚠️ ERROR: You are opening this file directly.\n\nYou must use a Local Server (like VS Code Live Server) for the download to work.");
-    document.body.innerHTML = "<div style='padding: 20px; color: red; font-family: sans-serif;'><h1>Stop!</h1><p>You cannot open the HTML file directly.</p><p>Please use VS Code 'Live Server' or run a local python server.</p></div>";
-    throw new Error("File protocol blocked.");
-}
-
-console.log("--- SCRIPT STARTED ---");
-
-// ==========================================
-// 2. CONFIGURATION
-// ==========================================
-const OPENSKY_CONFIG = {
-    "agent_name": "Opensky",
-    "author": "Hafij Shaikh",
-    // Using a smaller, faster model to ensure download starts quickly
-    "primary_model": "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", 
-    "storage_policy": "persistent_indexeddb",
-    "version": "3.2.1"
-};
-
-// ==========================================
-// 3. UI ELEMENTS
-// ==========================================
+// UI Elements
 const loadingScreen = document.getElementById('loadingScreen');
 const chatContainer = document.getElementById('chatContainer');
 const messagesArea = document.getElementById('messagesArea');
@@ -40,66 +18,82 @@ const statusText = document.getElementById('statusText');
 const thinkingPanel = document.getElementById('thinkingPanel');
 const thinkingContent = document.getElementById('thinkingContent');
 
-// ==========================================
-// 4. CORE LOGIC
-// ==========================================
-let engine = null;
-let isGenerating = false;
-
-function updateLoadingUI(text, percent = 0) {
-    loadingLabel.textContent = text;
-    loadingPercent.textContent = `${percent}%`;
-    sliderFill.style.width = `${percent}%`;
-    console.log(`[Progress] ${text} - ${percent}%`);
+// Helper to safely update Loading UI
+function setStatusText(text, percent = null) {
+    if (loadingLabel) loadingLabel.textContent = text;
+    if (percent !== null) {
+        if (loadingPercent) loadingPercent.textContent = `${percent}%`;
+        if (sliderFill) sliderFill.style.width = `${percent}%`;
+    }
+    console.log(`[Status] ${text}`);
 }
 
-async function initEngine() {
+// ==========================================
+// 2. DYNAMIC IMPORT (CATCHES CDN FAILURES)
+// ==========================================
+async function loadDependencies() {
     try {
-        updateLoadingUI("Checking WebGPU...", 0);
-
-        // CHECK 2: Does the browser support WebGPU?
-        if (!navigator.gpu) {
-            throw new Error("WebGPU not supported. Use Chrome v113+ or Edge v113+.");
-        }
-
-        updateLoadingUI("Requesting GPU Adapter...", 5);
+        setStatusText("Connecting to AI Network...", 5);
         
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            throw new Error("GPU Adapter is null. Hardware might be unsupported.");
-        }
-
-        updateLoadingUI("Adapter found. Initializing WebLLM...", 10);
-
-        // CHECK 3: Initialize Engine with Logging
-        engine = await webllm.CreateMLCEngine(
-            OPENSKY_CONFIG.primary_model, 
-            {
-                initProgressCallback: (report) => {
-                    // This function triggers the download
-                    let percent = Math.round(report.progress * 100);
-                    updateLoadingUI(report.text, percent);
-                }
-            }
-        );
-
-        // SUCCESS
-        updateLoadingUI("Ready!", 100);
-        loadingScreen.classList.add('hidden');
-        chatContainer.style.display = 'flex';
-        inputText.focus();
-        setStatus('online');
-
-    } catch (e) {
-        console.error(e);
-        loadingLabel.textContent = `Error: ${e.message}`;
-        loadingLabel.style.color = "red";
-        sliderFill.style.backgroundColor = "red";
+        // Dynamic import allows us to catch network errors
+        const webllm = await import("https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib/module.min.js");
+        
+        setStatusText("AI Module Loaded.", 10);
+        return webllm;
+    } catch (err) {
+        setStatusText("❌ Network Error: Could not load AI engine.", 0);
+        console.error(err);
+        throw err;
     }
 }
 
 // ==========================================
-// 5. AGENT LOGIC
+// 3. MAIN INITIALIZATION
+// ==========================================
+async function initEngine() {
+    let webllm;
+    try {
+        // 1. Load the library
+        webllm = await loadDependencies();
+
+        // 2. Check WebGPU
+        setStatusText("Checking WebGPU Support...", 15);
+        if (!navigator.gpu) {
+            throw new Error("WebGPU not supported. Please use Chrome v113+ (Android/Desktop).");
+        }
+
+        // 3. Initialize Engine & DOWNLOAD MODEL
+        setStatusText("Starting Download...", 20);
+        
+        // Use a smaller model for better mobile support
+        const selectedModel = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+
+        engine = await webllm.CreateMLCEngine(selectedModel, {
+            initProgressCallback: (report) => {
+                // THIS IS THE DOWNLOAD PROGRESS
+                let percent = Math.round(report.progress * 100);
+                setStatusText(report.text, percent);
+            }
+        });
+
+        // 4. Success
+        setStatusText("Model Ready!", 100);
+        setTimeout(() => {
+            loadingScreen.classList.add('hidden');
+            chatContainer.style.display = 'flex';
+            inputText.focus();
+            setOnlineStatus(true);
+        }, 500);
+
+    } catch (e) {
+        console.error(e);
+        setStatusText(`❌ Error: ${e.message}`, 0);
+        loadingLabel.style.color = "red";
+    }
+}
+
+// ==========================================
+// 4. AGENT LOGIC
 // ==========================================
 class Planner {
     constructor(goal) { this.goal = goal; }
@@ -114,7 +108,7 @@ class Agent {
     getSystemPrompt(plan) { return `You are ${this.Name}. Follow plan: ${plan.join(" -> ")}.`; }
 }
 
-const agent = new Agent(OPENSKY_CONFIG);
+const agent = new Agent({ agent_name: "Opensky", author: "Hafij Shaikh" });
 
 async function runAgentLoop(userQuery) {
     thinkingPanel.style.display = 'block';
@@ -157,17 +151,18 @@ async function runAgentLoop(userQuery) {
         appendMessage("sky", `Error: ${err.message}`);
     } finally {
         isGenerating = false;
-        setStatus('online');
+        setOnlineStatus(true);
     }
 }
 
 // ==========================================
-// 6. HELPERS
+// 5. UI HELPERS
 // ==========================================
-function setStatus(status) {
-    sendBtn.disabled = status !== 'online';
-    statusText.textContent = status === 'online' ? 'Agent Ready' : 'Processing...';
-    statusText.className = `status-text ${status}`;
+function setOnlineStatus(isOnline) {
+    sendBtn.disabled = !isOnline;
+    statusDot.className = isOnline ? 'status-dot' : 'status-dot loading';
+    statusText.textContent = isOnline ? 'Agent Ready' : 'Processing...';
+    statusText.className = isOnline ? 'status-text online' : 'status-text loading';
 }
 
 function parseMarkdown(text) {
@@ -207,7 +202,7 @@ async function sendMessage() {
     inputText.value = '';
     inputText.style.height = 'auto';
     
-    setStatus('generating');
+    setOnlineStatus(false);
     isGenerating = true;
     await runAgentLoop(text);
 }
