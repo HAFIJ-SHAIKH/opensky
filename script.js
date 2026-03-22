@@ -1,63 +1,105 @@
 import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib/module.min.js";
 
 // ==========================================
-// 1. CONFIGURATION (OPTIMIZED FOR MOBILE)
+// 1. SANITY CHECKS
 // ==========================================
-// 8B is too big for most phones. 
-// We use Qwen2.5-1.5B which is fast, smart, and fits in ~1.5GB RAM.
+// CHECK 1: Are you opening the file correctly?
+if (window.location.protocol === 'file:') {
+    alert("⚠️ ERROR: You are opening this file directly.\n\nYou must use a Local Server (like VS Code Live Server) for the download to work.");
+    document.body.innerHTML = "<div style='padding: 20px; color: red; font-family: sans-serif;'><h1>Stop!</h1><p>You cannot open the HTML file directly.</p><p>Please use VS Code 'Live Server' or run a local python server.</p></div>";
+    throw new Error("File protocol blocked.");
+}
+
+console.log("--- SCRIPT STARTED ---");
+
+// ==========================================
+// 2. CONFIGURATION
+// ==========================================
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "author": "Hafij Shaikh",
+    // Using a smaller, faster model to ensure download starts quickly
     "primary_model": "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", 
     "storage_policy": "persistent_indexeddb",
     "version": "3.2.1"
 };
 
 // ==========================================
-// 2. UI CONTROLLER
+// 3. UI ELEMENTS
 // ==========================================
-const UI = {
-    loadingScreen: document.getElementById('loadingScreen'),
-    chatContainer: document.getElementById('chatContainer'),
-    messagesArea: document.getElementById('messagesArea'),
-    inputText: document.getElementById('inputText'),
-    sendBtn: document.getElementById('sendBtn'),
-    sliderFill: document.getElementById('sliderFill'),
-    loadingPercent: document.getElementById('loadingPercent'),
-    loadingLabel: document.getElementById('loadingLabel'),
-    statusDot: document.getElementById('statusDot'),
-    statusText: document.getElementById('statusText'),
-    thinkingPanel: document.getElementById('thinkingPanel'),
-    thinkingContent: document.getElementById('thinkingContent'),
+const loadingScreen = document.getElementById('loadingScreen');
+const chatContainer = document.getElementById('chatContainer');
+const messagesArea = document.getElementById('messagesArea');
+const inputText = document.getElementById('inputText');
+const sendBtn = document.getElementById('sendBtn');
+const sliderFill = document.getElementById('sliderFill');
+const loadingPercent = document.getElementById('loadingPercent');
+const loadingLabel = document.getElementById('loadingLabel');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const thinkingPanel = document.getElementById('thinkingPanel');
+const thinkingContent = document.getElementById('thinkingContent');
 
-    setLoadingText(text) {
-        if (this.loadingLabel) this.loadingLabel.textContent = text;
-        console.log(`[UI] ${text}`);
-    },
+// ==========================================
+// 4. CORE LOGIC
+// ==========================================
+let engine = null;
+let isGenerating = false;
 
-    showError(title, message) {
-        this.setLoadingText(`❌ ${title}: ${message}`);
-        if (this.loadingLabel) this.loadingLabel.style.color = "red";
-        if (this.sliderFill) this.sliderFill.style.backgroundColor = "#ef4444";
-        if (this.loadingPercent) this.loadingPercent.textContent = "Failed";
-    },
+function updateLoadingUI(text, percent = 0) {
+    loadingLabel.textContent = text;
+    loadingPercent.textContent = `${percent}%`;
+    sliderFill.style.width = `${percent}%`;
+    console.log(`[Progress] ${text} - ${percent}%`);
+}
 
-    updateProgress(report) {
-        const percent = Math.round(report.progress * 100);
+async function initEngine() {
+    try {
+        updateLoadingUI("Checking WebGPU...", 0);
+
+        // CHECK 2: Does the browser support WebGPU?
+        if (!navigator.gpu) {
+            throw new Error("WebGPU not supported. Use Chrome v113+ or Edge v113+.");
+        }
+
+        updateLoadingUI("Requesting GPU Adapter...", 5);
         
-        if (this.sliderFill) this.sliderFill.style.width = `${percent}%`;
-        if (this.loadingPercent) this.loadingPercent.textContent = `${percent}%`;
-        
-        let friendlyText = report.text;
-        if (friendlyText.includes("Fetching")) friendlyText = "Connecting to server...";
-        if (friendlyText.includes("shard")) friendlyText = `Downloading AI Model... (${percent}%)`;
-        
-        this.setLoadingText(friendlyText);
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+            throw new Error("GPU Adapter is null. Hardware might be unsupported.");
+        }
+
+        updateLoadingUI("Adapter found. Initializing WebLLM...", 10);
+
+        // CHECK 3: Initialize Engine with Logging
+        engine = await webllm.CreateMLCEngine(
+            OPENSKY_CONFIG.primary_model, 
+            {
+                initProgressCallback: (report) => {
+                    // This function triggers the download
+                    let percent = Math.round(report.progress * 100);
+                    updateLoadingUI(report.text, percent);
+                }
+            }
+        );
+
+        // SUCCESS
+        updateLoadingUI("Ready!", 100);
+        loadingScreen.classList.add('hidden');
+        chatContainer.style.display = 'flex';
+        inputText.focus();
+        setStatus('online');
+
+    } catch (e) {
+        console.error(e);
+        loadingLabel.textContent = `Error: ${e.message}`;
+        loadingLabel.style.color = "red";
+        sliderFill.style.backgroundColor = "red";
     }
-};
+}
 
 // ==========================================
-// 3. AGENT LOGIC
+// 5. AGENT LOGIC
 // ==========================================
 class Planner {
     constructor(goal) { this.goal = goal; }
@@ -68,63 +110,19 @@ class Planner {
 }
 
 class Agent {
-    constructor(config) {
-        this.Name = config.agent_name;
-        this.Author = config.author;
-    }
-    getSystemPrompt(plan) {
-        return `You are ${this.Name}, created by ${this.Author}. Plan: ${plan.join(" -> ")}. Be concise.`;
-    }
+    constructor(config) { this.Name = config.agent_name; this.Author = config.author; }
+    getSystemPrompt(plan) { return `You are ${this.Name}. Follow plan: ${plan.join(" -> ")}.`; }
 }
 
-// ==========================================
-// 4. CORE LOGIC
-// ==========================================
-let engine = null;
-let agent = new Agent(OPENSKY_CONFIG);
-let isGenerating = false;
-
-async function initEngine() {
-    try {
-        UI.setLoadingText("Checking Device Compatibility...");
-
-        // 1. CHECK WEBGPU
-        if (!navigator.gpu) {
-            throw new Error("WebGPU not supported. Please use Chrome v113+ (Android/Desktop) or Edge v113+. (Note: Safari on iOS is not supported yet).");
-        }
-
-        // 2. CHECK GPU ADAPTER
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            throw new Error("No GPU found. This device might be too old or has hardware acceleration disabled.");
-        }
-
-        // 3. START DOWNLOAD
-        UI.setLoadingText(`Initializing ${OPENSKY_CONFIG.primary_model}...`);
-        
-        engine = await webllm.CreateMLCEngine(
-            OPENSKY_CONFIG.primary_model, 
-            {
-                initProgressCallback: (report) => UI.updateProgress(report)
-            }
-        );
-
-        UI.setLoadingText("Model Ready!");
-        finishLoading();
-
-    } catch (e) {
-        console.error(e);
-        UI.showError("Initialization Failed", e.message);
-    }
-}
+const agent = new Agent(OPENSKY_CONFIG);
 
 async function runAgentLoop(userQuery) {
-    UI.thinkingPanel.style.display = 'block';
-    UI.thinkingContent.textContent = "Thinking...";
+    thinkingPanel.style.display = 'block';
+    thinkingContent.textContent = "Thinking...";
 
     const planner = new Planner(userQuery);
     const plan = planner.decompose();
-    UI.thinkingContent.textContent = `Plan: ${plan.join(" -> ")}`;
+    thinkingContent.textContent = `Plan: ${plan.join(" -> ")}`;
 
     try {
         const completion = await engine.chat.completions.create({
@@ -136,14 +134,14 @@ async function runAgentLoop(userQuery) {
             stream: true,
         });
 
-        UI.thinkingPanel.style.display = 'none';
+        thinkingPanel.style.display = 'none';
         
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message sky';
         const contentWrapper = document.createElement('div');
         contentWrapper.className = 'sky-content';
         msgDiv.appendChild(contentWrapper);
-        UI.messagesArea.appendChild(msgDiv);
+        messagesArea.appendChild(msgDiv);
 
         let fullResponse = "";
         for await (const chunk of completion) {
@@ -151,11 +149,11 @@ async function runAgentLoop(userQuery) {
             if (delta) {
                 fullResponse += delta;
                 contentWrapper.innerHTML = parseMarkdown(fullResponse);
-                UI.messagesArea.scrollTop = UI.messagesArea.scrollHeight;
+                messagesArea.scrollTop = messagesArea.scrollHeight;
             }
         }
     } catch (err) {
-        UI.thinkingPanel.style.display = 'none';
+        thinkingPanel.style.display = 'none';
         appendMessage("sky", `Error: ${err.message}`);
     } finally {
         isGenerating = false;
@@ -164,26 +162,12 @@ async function runAgentLoop(userQuery) {
 }
 
 // ==========================================
-// 5. HELPERS
+// 6. HELPERS
 // ==========================================
-function finishLoading() {
-    UI.loadingScreen.classList.add('hidden');
-    UI.chatContainer.style.display = 'flex';
-    UI.inputText.focus();
-    setStatus('online');
-}
-
 function setStatus(status) {
-    UI.sendBtn.disabled = status !== 'online';
-    if (status === 'online') {
-        UI.statusDot.className = 'status-dot';
-        UI.statusText.className = 'status-text online';
-        UI.statusText.textContent = 'Agent Ready';
-    } else {
-        UI.statusDot.className = 'status-dot loading';
-        UI.statusText.className = 'status-text loading';
-        UI.statusText.textContent = 'Processing...';
-    }
+    sendBtn.disabled = status !== 'online';
+    statusText.textContent = status === 'online' ? 'Agent Ready' : 'Processing...';
+    statusText.className = `status-text ${status}`;
 }
 
 function parseMarkdown(text) {
@@ -192,11 +176,10 @@ function parseMarkdown(text) {
     escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
         `<div class="code-block"><div class="block-header"><span class="block-label">${lang || 'code'}</span><button class="copy-btn">Copy</button></div><div class="block-body"><pre>${code.trim()}</pre></div></div>`
     );
-    escaped = escaped.replace(/\n/g, '<br>');
-    return escaped;
+    return escaped.replace(/\n/g, '<br>');
 }
 
-UI.messagesArea.addEventListener('click', (e) => {
+messagesArea.addEventListener('click', (e) => {
     if (e.target.classList.contains('copy-btn')) {
         const code = e.target.closest('.code-block').querySelector('pre').textContent;
         navigator.clipboard.writeText(code);
@@ -212,36 +195,26 @@ function appendMessage(role, text) {
     bubble.className = role === 'user' ? 'user-bubble' : 'sky-content';
     bubble.innerHTML = role === 'user' ? text : parseMarkdown(text);
     div.appendChild(bubble);
-    UI.messagesArea.appendChild(div);
-    UI.messagesArea.scrollTop = UI.messagesArea.scrollHeight;
+    messagesArea.appendChild(div);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
 
 async function sendMessage() {
-    const text = UI.inputText.value.trim();
+    const text = inputText.value.trim();
     if (!text || isGenerating) return;
     
     appendMessage("user", text);
-    UI.inputText.value = '';
-    UI.inputText.style.height = 'auto';
+    inputText.value = '';
+    inputText.style.height = 'auto';
     
     setStatus('generating');
     isGenerating = true;
     await runAgentLoop(text);
 }
 
-UI.inputText.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 100) + 'px';
-});
-
-UI.inputText.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-    }
-});
-
-UI.sendBtn.addEventListener('click', sendMessage);
+inputText.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px'; });
+inputText.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+sendBtn.addEventListener('click', sendMessage);
 
 // --- START ---
 initEngine();
