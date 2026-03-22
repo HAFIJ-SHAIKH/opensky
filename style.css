@@ -6,7 +6,6 @@
   --fg-muted: #64748b;
   --accent: #6366f1;
   --accent-light: #818cf8;
-  --accent-bg: #eef2ff;
   --user-bg: #6366f1;
   --user-fg: #ffffff;
   --border: #e2e8f0;
@@ -38,7 +37,11 @@ body {
 }
 
 /* Loading Screen */
-.loading-screen { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease, visibility 0.5s ease; }
+.loading-screen {
+  position: fixed; inset: 0; z-index: 100; background: var(--bg); 
+  display: flex; flex-direction: column; align-items: center; justify-content: center; 
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
 .loading-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .loading-title { font-size: 2.5rem; font-weight: 700; color: var(--accent); margin-bottom: 2rem; letter-spacing: -0.03em; }
 .loading-bar-container { width: 300px; }
