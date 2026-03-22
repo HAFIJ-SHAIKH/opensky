@@ -1,7 +1,7 @@
 import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib/module.min.js";
 
 // ==========================================
-// 1. EMBEDDED CONFIGURATION (opensky-config.json)
+// 1. EMBEDDED CONFIGURATION (No Downloads)
 // ==========================================
 const OPENSKY_CONFIG = {
     "agent_name": "opensky",
@@ -12,59 +12,57 @@ const OPENSKY_CONFIG = {
 };
 
 // ==========================================
-// 2. GO LOGIC TRANSLATION (opensky_planner.go)
+// 2. AGENT LOGIC (Translated from Go)
 // ==========================================
+
+// Translated from opensky_planner.go
 class Planner {
     constructor(goal) {
         this.goal = goal;
         this.steps = [];
     }
 
-    // Translated from: func (p *Planner) Decompose()
     decompose() {
-        const logMessage = `[opensky Brain] Planning roadmap for: ${this.goal}`;
-        console.log(logMessage);
+        // Simulate the logic from your Go file
+        console.log(`[opensky Brain] Planning roadmap for: ${this.goal}`);
         
-        // Advanced logic to prevent jumping into code without thinking
-        // In Go this was a placeholder, here we generate a basic plan
-        this.steps = [
-            `Analyze intent of: "${this.goal}"`,
-            "Check for necessary code/math tools",
-            "Generate response"
-        ];
+        // Basic heuristic planning
+        if (this.goal.toLowerCase().includes("code")) {
+            this.steps = ["Analyze Code Request", "Generate Syntax", "Verify Logic"];
+        } else {
+            this.steps = ["Understand Intent", "Formulate Answer", "Stream Response"];
+        }
         
         return {
-            log: logMessage,
-            steps: this.steps
+            log: `[opensky Brain] Planning roadmap for: ${this.goal}`,
+            plan: this.steps
         };
     }
 }
 
-// ==========================================
-// 3. GO LOGIC TRANSLATION (opensky_advanced.go)
-// ==========================================
+// Translated from opensky_advanced.go
 class Agent {
     constructor(config) {
         this.Name = config.agent_name;
         this.Author = config.author;
     }
 
-    // Translated from: func (a *Agent) Process(query string) string
     process(query) {
-        // The Go code returned a formatted string indicating processing.
-        // We return an object with status to feed into our UI.
+        // Simulate the logic from your Go file
+        const msg = `[${this.Name} Smart Engine]: Multi-threaded reasoning applied to "${query}"`;
+        console.log(msg);
         return {
             status: "processed",
-            message: `[${this.Name} Smart Engine]: Multi-threaded reasoning applied to ${query}`
+            log: msg
         };
     }
 }
 
 // ==========================================
-// 4. MAIN APPLICATION LOGIC
+// 3. MAIN APPLICATION
 // ==========================================
 let engine = null;
-let agent = new Agent(OPENSKY_CONFIG); // Initialize Agent from embedded config
+let agent = new Agent(OPENSKY_CONFIG);
 let isGenerating = false;
 
 // DOM Elements
@@ -82,10 +80,23 @@ const statusText = document.getElementById('statusText');
 const thinkingPanel = document.getElementById('thinkingPanel');
 const thinkingContent = document.getElementById('thinkingContent');
 
-// Initialize WebLLM Engine
+// Check for WebGPU support
+async function checkWebGPU() {
+    if (!navigator.gpu) {
+        throw new Error("WebGPU not supported. Please use Chrome 113+ or Edge 113+.");
+    }
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+        throw new Error("No appropriate GPUAdapter found.");
+    }
+}
+
+// Initialize Engine
 async function initEngine() {
+    loadingVersion.textContent = `Version: ${OPENSKY_CONFIG.version}`;
+    
     try {
-        loadingVersion.textContent = `Version: ${OPENSKY_CONFIG.version}`;
+        await checkWebGPU();
         
         engine = new webllm.MLCEngine();
         
@@ -96,35 +107,35 @@ async function initEngine() {
             loadingLabel.textContent = report.text;
         });
 
-        // Use model from embedded config
+        // Only downloads the MODEL, not the config files
         await engine.reload(OPENSKY_CONFIG.primary_model);
         
         finishLoading();
     } catch (e) {
         loadingLabel.textContent = `Error: ${e.message}`;
+        loadingLabel.style.color = "red";
         console.error(e);
     }
 }
 
-// Main Logic Loop
+// Agent Loop
 async function runAgentLoop(userQuery) {
     showThinking(true);
     
-    // 1. Run Planner Logic (from opensky_planner.go)
+    // 1. Run Planner (from opensky_planner.go)
     const planner = new Planner(userQuery);
-    const plan = planner.decompose();
-    updateThinking(plan.log);
+    const planData = planner.decompose();
+    updateThinking(planData.log);
 
-    // 2. Run Agent Processing Logic (from opensky_advanced.go)
-    const agentStatus = agent.process(userQuery);
-    // We display the "Smart Engine" status briefly in the thinking panel
-    updateThinking(`${plan.log}\n${agentStatus.message}`);
+    // 2. Run Agent Processing (from opensky_advanced.go)
+    const agentData = agent.process(userQuery);
+    updateThinking(`${planData.log}\n${agentData.log}`);
 
     // 3. Run LLM Inference
     try {
         const completion = await engine.chat.completions.create({
             messages: [
-                { role: "system", content: `You are ${agent.Name}, created by ${agent.Author}. You are a precise and helpful AI.` },
+                { role: "system", content: `You are ${agent.Name}, created by ${agent.Author}.` },
                 { role: "user", content: userQuery }
             ],
             temperature: 0.7,
