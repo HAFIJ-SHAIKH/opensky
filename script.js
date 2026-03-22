@@ -4,15 +4,16 @@ import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib
 // 1. EMBEDDED CONFIGURATION
 // ==========================================
 const OPENSKY_CONFIG = {
-    "agent_name": "opensky",
+    "agent_name": "Opensky",
     "author": "Hafij Shaikh",
-    "primary_model": "Llama-3.1-8B-Instruct-q4f16_1-MLC",
+    // Using a specific stable model ID for guaranteed download
+    "primary_model": "Llama-3.1-8B-Instruct-q4f16_1-MLC", 
     "storage_policy": "persistent_indexeddb",
     "version": "3.2.0"
 };
 
 // ==========================================
-// 2. AGENT LOGIC (Translated from Go)
+// 2. AGENT LOGIC (Enhanced Personality)
 // ==========================================
 class Planner {
     constructor(goal) {
@@ -20,14 +21,17 @@ class Planner {
         this.steps = [];
     }
     decompose() {
-        console.log(`[opensky Brain] Planning roadmap for: ${this.goal}`);
+        console.log(`[Opensky Brain] Planning roadmap for: ${this.goal}`);
+        // More granular planning
         if (this.goal.toLowerCase().includes("code")) {
-            this.steps = ["Analyze Code Request", "Generate Syntax", "Verify Logic"];
+            this.steps = ["Analyze Code Structure", "Draft Syntax", "Verify Correctness"];
+        } else if (this.goal.toLowerCase().includes("hello") || this.goal.toLowerCase().length < 5) {
+            this.steps = ["Greet User", "Offer Assistance"];
         } else {
-            this.steps = ["Understand Intent", "Formulate Answer", "Stream Response"];
+            this.steps = ["Analyze Query Intent", "Retrieve Knowledge", "Formulate Response"];
         }
         return {
-            log: `[opensky Brain] Planning roadmap for: ${this.goal}`,
+            log: `[Strategy] Steps: ${this.steps.join(" -> ")}`,
             plan: this.steps
         };
     }
@@ -37,9 +41,23 @@ class Agent {
     constructor(config) {
         this.Name = config.agent_name;
         this.Author = config.author;
+        this.Personality = "helpful, precise, and slightly futuristic";
     }
+    
+    // Generates the system prompt dynamically
+    getSystemPrompt(plan) {
+        return `You are ${this.Name}, a highly advanced AI agent created by ${this.Author}.
+Your current operational mode is: '${this.Personality}'.
+Your internal logic has devised the following plan for the user's query:
+[PLAN START]
+ ${plan.join("\n -> ")}
+[PLAN END]
+
+Follow this plan strictly to answer the user. Be concise and format code blocks clearly.`;
+    }
+
     process(query) {
-        const msg = `[${this.Name} Smart Engine]: Multi-threaded reasoning applied to "${query}"`;
+        const msg = `[${this.Name} Core]: Reasoning applied to "${query}"`;
         console.log(msg);
         return { status: "processed", log: msg };
     }
@@ -68,60 +86,84 @@ const thinkingContent = document.getElementById('thinkingContent');
 
 // Check for WebGPU support
 async function checkWebGPU() {
+    // Update UI to show we are checking
+    loadingLabel.textContent = "Checking WebGPU support...";
+    
     if (!navigator.gpu) {
         throw new Error("WebGPU not supported. Please use Chrome 113+ or Edge 113+.");
     }
+    
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
-        throw new Error("No appropriate GPUAdapter found.");
+        throw new Error("No appropriate GPUAdapter found. Your GPU might be blacklisted.");
     }
+    
+    loadingLabel.textContent = "WebGPU initialized successfully.";
 }
 
-// Initialize Engine with robust downloading
+// Initialize Engine - FIXED FOR DOWNLOAD VISIBILITY
 async function initEngine() {
     try {
         await checkWebGPU();
         
-        // Use CreateMLCEngine for robust initialization and downloading
+        loadingLabel.textContent = `Preparing to download ${OPENSKY_CONFIG.primary_model}...`;
+        
+        // Create the engine with progress reporting
         engine = await webllm.CreateMLCEngine(
             OPENSKY_CONFIG.primary_model, 
             {
                 initProgressCallback: (report) => {
-                    // Update loading UI
+                    // UPDATE UI WITH DOWNLOAD PROGRESS
+                    // report.progress is 0.0 to 1.0
                     const percent = Math.round(report.progress * 100);
+                    
                     sliderFill.style.width = `${percent}%`;
                     loadingPercent.textContent = `${percent}%`;
+                    
+                    // Show detailed text (e.g., "Downloading model.shard...")
                     loadingLabel.textContent = report.text;
+                    
+                    console.log(`[WebLLM] ${report.text} (${percent}%)`);
                 }
             }
         );
         
+        // Success
+        loadingLabel.textContent = "Model loaded successfully!";
         finishLoading();
+        
     } catch (e) {
+        // CATCH ERRORS AND SHOW THEM ON SCREEN
+        console.error(e);
         loadingLabel.textContent = `Error: ${e.message}`;
         loadingLabel.style.color = "red";
-        console.error(e);
+        loadingPercent.textContent = "Failed";
+        sliderFill.style.backgroundColor = "red";
     }
 }
 
 // Agent Loop
 async function runAgentLoop(userQuery) {
     showThinking(true);
-    
+    updateThinking("Initializing cognitive cycle...");
+
     // 1. Planner
     const planner = new Planner(userQuery);
     const planData = planner.decompose();
     updateThinking(planData.log);
 
-    // 2. Agent
+    // 2. Agent Logic
     const agentData = agent.process(userQuery);
     updateThinking(`${planData.log}\n${agentData.log}`);
 
-    // 3. LLM
+    // 3. LLM Generation
     try {
+        // DYNAMIC SYSTEM PROMPT BASED ON PLAN
+        const systemPrompt = agent.getSystemPrompt(planData.plan);
+
         const completion = await engine.chat.completions.create({
             messages: [
-                { role: "system", content: `You are ${agent.Name}, created by ${agent.Author}.` },
+                { role: "system", content: systemPrompt },
                 { role: "user", content: userQuery }
             ],
             temperature: 0.7,
@@ -139,6 +181,7 @@ async function runAgentLoop(userQuery) {
             const delta = chunk.choices[0].delta.content;
             if (delta) {
                 fullResponse += delta;
+                // Basic streaming text append (formatting at end is safer for performance)
                 contentWrapper.innerHTML = parseMarkdown(fullResponse);
                 messagesArea.scrollTop = messagesArea.scrollHeight;
             }
@@ -147,6 +190,7 @@ async function runAgentLoop(userQuery) {
     } catch (err) {
         showThinking(false);
         appendMessage("sky", `Error: ${err.message}`);
+        console.error(err);
     } finally {
         isGenerating = false;
         setStatus('online');
@@ -208,41 +252,51 @@ function appendMessage(role, text) {
     messagesArea.scrollTop = messagesArea.scrollHeight;
 }
 
+// --- Security Safe Markdown Parser ---
 function parseMarkdown(text) {
     if (!text) return "";
+    // Escape HTML first to prevent XSS
     let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    
+    // Code Blocks
     escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
         const language = lang || 'code';
         const cleanCode = code.trim();
+        // Safer rendering - no inline onclick
         return `
             <div class="code-block">
                 <div class="block-header">
                     <span class="block-label">${language}</span>
-                    <button class="copy-btn" onclick="copyCode(this, encodeURIComponent(\`${cleanCode.replace(/`/g, '\\`')}\`))">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                        <span>Copy</span>
-                    </button>
+                    <button class="copy-btn">Copy</button>
                 </div>
                 <div class="block-body"><pre>${cleanCode}</pre></div>
             </div>`;
     });
+    
+    // Basic Line Breaks
     escaped = escaped.replace(/\n/g, '<br>');
     return escaped;
 }
 
-window.copyCode = (btn, encodedText) => {
-    const text = decodeURIComponent(encodedText);
-    navigator.clipboard.writeText(text).then(() => {
-        btn.classList.add('copied');
-        const span = btn.querySelector('span');
-        const orig = span.textContent;
-        span.textContent = 'Done';
-        setTimeout(() => {
-            btn.classList.remove('copied');
-            span.textContent = orig;
-        }, 1200);
-    });
-};
+// Copy listener (safer method)
+messagesArea.addEventListener('click', (e) => {
+    if (e.target.closest('.copy-btn')) {
+        const btn = e.target.closest('.copy-btn');
+        const codeBlock = btn.closest('.code-block');
+        const code = codeBlock.querySelector('pre').textContent;
+        
+        navigator.clipboard.writeText(code).then(() => {
+            btn.classList.add('copied');
+            const span = btn.querySelector('span') || btn; // Handle if svg is clicked
+            const orig = btn.textContent;
+            btn.textContent = 'Done';
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.textContent = 'Copy';
+            }, 1200);
+        });
+    }
+});
 
 function clearWelcome() {
     const welcome = messagesArea.querySelector('.welcome');
@@ -265,11 +319,6 @@ async function sendMessage() {
     
     await runAgentLoop(text);
 }
-
-window.useSuggestion = (text) => {
-    inputText.value = text;
-    sendMessage();
-};
 
 // --- Events ---
 inputText.addEventListener('input', function() {
