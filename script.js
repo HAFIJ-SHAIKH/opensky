@@ -1,38 +1,31 @@
 import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib/module.min.js";
 
 // ==========================================
-// 1. EMBEDDED CONFIGURATION (No Downloads)
+// 1. EMBEDDED CONFIGURATION
 // ==========================================
 const OPENSKY_CONFIG = {
     "agent_name": "opensky",
     "author": "Hafij Shaikh",
     "primary_model": "Llama-3.1-8B-Instruct-q4f16_1-MLC",
     "storage_policy": "persistent_indexeddb",
-    "version": "3.2.0-Llama-Specialist"
+    "version": "3.2.0"
 };
 
 // ==========================================
 // 2. AGENT LOGIC (Translated from Go)
 // ==========================================
-
-// Translated from opensky_planner.go
 class Planner {
     constructor(goal) {
         this.goal = goal;
         this.steps = [];
     }
-
     decompose() {
-        // Simulate the logic from your Go file
         console.log(`[opensky Brain] Planning roadmap for: ${this.goal}`);
-        
-        // Basic heuristic planning
         if (this.goal.toLowerCase().includes("code")) {
             this.steps = ["Analyze Code Request", "Generate Syntax", "Verify Logic"];
         } else {
             this.steps = ["Understand Intent", "Formulate Answer", "Stream Response"];
         }
-        
         return {
             log: `[opensky Brain] Planning roadmap for: ${this.goal}`,
             plan: this.steps
@@ -40,21 +33,15 @@ class Planner {
     }
 }
 
-// Translated from opensky_advanced.go
 class Agent {
     constructor(config) {
         this.Name = config.agent_name;
         this.Author = config.author;
     }
-
     process(query) {
-        // Simulate the logic from your Go file
         const msg = `[${this.Name} Smart Engine]: Multi-threaded reasoning applied to "${query}"`;
         console.log(msg);
-        return {
-            status: "processed",
-            log: msg
-        };
+        return { status: "processed", log: msg };
     }
 }
 
@@ -74,7 +61,6 @@ const sendBtn = document.getElementById('sendBtn');
 const sliderFill = document.getElementById('sliderFill');
 const loadingPercent = document.getElementById('loadingPercent');
 const loadingLabel = document.getElementById('loadingLabel');
-const loadingVersion = document.getElementById('loadingVersion');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const thinkingPanel = document.getElementById('thinkingPanel');
@@ -91,24 +77,24 @@ async function checkWebGPU() {
     }
 }
 
-// Initialize Engine
+// Initialize Engine with robust downloading
 async function initEngine() {
-    loadingVersion.textContent = `Version: ${OPENSKY_CONFIG.version}`;
-    
     try {
         await checkWebGPU();
         
-        engine = new webllm.MLCEngine();
-        
-        engine.setInitProgressCallback((report) => {
-            const percent = Math.round(report.progress * 100);
-            sliderFill.style.width = `${percent}%`;
-            loadingPercent.textContent = `${percent}%`;
-            loadingLabel.textContent = report.text;
-        });
-
-        // Only downloads the MODEL, not the config files
-        await engine.reload(OPENSKY_CONFIG.primary_model);
+        // Use CreateMLCEngine for robust initialization and downloading
+        engine = await webllm.CreateMLCEngine(
+            OPENSKY_CONFIG.primary_model, 
+            {
+                initProgressCallback: (report) => {
+                    // Update loading UI
+                    const percent = Math.round(report.progress * 100);
+                    sliderFill.style.width = `${percent}%`;
+                    loadingPercent.textContent = `${percent}%`;
+                    loadingLabel.textContent = report.text;
+                }
+            }
+        );
         
         finishLoading();
     } catch (e) {
@@ -122,16 +108,16 @@ async function initEngine() {
 async function runAgentLoop(userQuery) {
     showThinking(true);
     
-    // 1. Run Planner (from opensky_planner.go)
+    // 1. Planner
     const planner = new Planner(userQuery);
     const planData = planner.decompose();
     updateThinking(planData.log);
 
-    // 2. Run Agent Processing (from opensky_advanced.go)
+    // 2. Agent
     const agentData = agent.process(userQuery);
     updateThinking(`${planData.log}\n${agentData.log}`);
 
-    // 3. Run LLM Inference
+    // 3. LLM
     try {
         const completion = await engine.chat.completions.create({
             messages: [
