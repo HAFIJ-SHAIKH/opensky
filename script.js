@@ -9,25 +9,24 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.2.0"
+    "version": "6.0.0"
 };
 
-const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Be concise.`;
-const ARTIST_PROMPT = `You are the creative module of ${OPENSKY_CONFIG.agent_name}. Generate vivid image prompts.`;
+// Prompts
+const MAIN_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, a helpful AI assistant created by ${OPENSKY_CONFIG.creator}. 
+You are concise, smart, and helpful. You can see images if the user uploads them.
+If the user asks you to "draw", "generate an image", or "create a picture", you MUST generate a valid SVG code in a code block. 
+Do not say you cannot create images. Instead, generate SVG code.`;
 
-// Model IDs specifically tuned for mobile compatibility
+// Models
+// We use Phi-3.5-Vision for both text and image understanding.
+// It is multimodal and works on mobile/web.
 const MODELS = {
-  atlas: {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
-    name: "Atlas Core",
-    role: "Logic & Code",
-    systemPrompt: ATLAS_PROMPT
-  },
-  artist: {
-    id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
-    name: "Artist Module",
-    role: "Creative",
-    systemPrompt: ARTIST_PROMPT
+  main: {
+    id: "Phi-3.5-vision-instruct-q4f16_1-MLC",
+    name: "Opensky Vision Core",
+    role: "Chat & Vision",
+    systemPrompt: MAIN_PROMPT
   }
 };
 
@@ -42,21 +41,25 @@ const sendBtn = document.getElementById('sendBtn');
 const sliderFill = document.getElementById('sliderFill');
 const loadingPercent = document.getElementById('loadingPercent');
 const loadingLabel = document.getElementById('loadingLabel');
-const statusIndicator = document.getElementById('statusIndicator');
-const statusText = document.getElementById('statusText');
 const modelStatusContainer = document.getElementById('modelStatusContainer');
 const debugLog = document.getElementById('debugLog');
+const uploadBtn = document.getElementById('uploadBtn');
+const imageInput = document.getElementById('imageInput');
+const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+const imagePreview = document.getElementById('imagePreview');
+const removeImageBtn = document.getElementById('removeImageBtn');
 
-let engines = {}; 
+let engine = null;
 let isGenerating = false;
+let currentImageBase64 = null; // Stores the image to be sent
 
 // ==========================================
-// DEBUG HELPER (Shows errors on screen)
+// DEBUG HELPER
 // ==========================================
 function showError(title, err) {
     console.error(err);
     debugLog.style.display = 'block';
-    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}<br><br><em>Check if you are using Chrome v113+ on Android.</em>`;
+    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}<br><br><em>Check console for details.</em>`;
     loadingPercent.textContent = "Error";
     loadingLabel.textContent = title;
 }
@@ -66,43 +69,34 @@ function showError(title, err) {
 // ==========================================
 async function init() {
     try {
-        loadingLabel.textContent = "Step 1: Checking WebGPU...";
+        loadingLabel.textContent = "Checking WebGPU...";
         
         if (!navigator.gpu) {
-            throw new Error("WebGPU not supported. Please use Chrome v113+ on Android.");
+            throw new Error("WebGPU not supported. Please use Chrome v113+.");
         }
 
         modelStatusContainer.innerHTML = `
-          <div class="model-card" id="card-atlas">
-            <div class="model-card-name">Atlas Core</div>
-            <div class="model-card-desc">Pending...</div>
-          </div>
-          <div class="model-card" id="card-artist">
-            <div class="model-card-name">Artist Module</div>
+          <div class="model-card" id="card-main">
+            <div class="model-card-name">${MODELS.main.name}</div>
             <div class="model-card-desc">Pending...</div>
           </div>
         `;
 
-        // --- LOAD MODEL 1: ATLAS ---
-        loadingLabel.textContent = "Loading Atlas Core (1/2)...";
-        engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
-            initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
-        });
-
-        // --- LOAD MODEL 2: ARTIST ---
-        loadingLabel.textContent = "Loading Artist Module (2/2)...";
-        engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
-            initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
+        loadingLabel.textContent = "Loading Core Engine...";
+        
+        engine = await webllm.CreateMLCEngine(MODELS.main.id, {
+            initProgressCallback: (report) => updateModelUI('card-main', report)
         });
 
         // Success
         loadingLabel.textContent = "Ready.";
         loadingPercent.textContent = "100%";
+        sliderFill.style.width = "100%";
         
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
             chatContainer.classList.add('active');
-            setStatus('ready');
+            sendBtn.disabled = false;
         }, 500);
 
     } catch (err) {
@@ -110,71 +104,56 @@ async function init() {
     }
 }
 
-function updateModelUI(cardId, report, basePercent) {
+function updateModelUI(cardId, report) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const percent = Math.round(report.progress * 100);
   
   card.querySelector('.model-card-desc').textContent = report.text;
-  sliderFill.style.width = `${basePercent + Math.round(percent / 2)}%`;
-  loadingPercent.textContent = `${basePercent + Math.round(percent / 2)}%`;
-}
-
-function setStatus(status) {
-  const dot = statusIndicator.querySelector('.status-dot');
-  statusText.textContent = status === 'ready' ? 'Ready' : 'Processing...';
-  statusText.className = `status-text ${status === 'ready' ? '' : 'loading'}`;
-  dot.className = `status-dot ${status === 'ready' ? '' : 'loading'}`;
-  sendBtn.disabled = status !== 'ready' && !isGenerating; 
+  sliderFill.style.width = `${percent}%`;
+  loadingPercent.textContent = `${percent}%`;
 }
 
 // ==========================================
-// 5. AGENT LOGIC
+// 5. CHAT LOGIC
 // ==========================================
-function routeRequest(query) {
-  const q = query.toLowerCase();
-  if (["image", "draw", "picture", "art", "paint"].some(k => q.includes(k))) {
-    return { engine: engines.artist, config: MODELS.artist };
-  }
-  return { engine: engines.atlas, config: MODELS.atlas };
-}
-
-async function runAgentLoop(query) {
-  const accordion = document.createElement('div');
-  accordion.className = 'thoughts-accordion open';
-  
-  const accordionBtn = document.createElement('button');
-  accordionBtn.className = 'thoughts-btn';
-  accordionBtn.innerHTML = `<span>⚡ Thinking...</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-  accordionBtn.onclick = () => accordion.classList.toggle('open');
-
-  const accordionBody = document.createElement('div');
-  accordionBody.className = 'thoughts-body';
-  accordionBody.textContent = "Analyzing request...";
-  
-  accordion.appendChild(accordionBtn);
-  accordion.appendChild(accordionBody);
-  
+async function runChatLoop(query) {
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
-  msgDiv.style.display = 'none'; 
-
+  
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'assistant-content';
+  contentWrapper.innerHTML = '<span class="typing-indicator">...</span>';
+  
   msgDiv.appendChild(contentWrapper);
-
-  messagesArea.appendChild(accordion);
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
-  const { engine, config } = routeRequest(query);
+  // Prepare messages
+  const messages = [
+    { role: "system", content: MODELS.main.systemPrompt }
+  ];
+
+  // If image exists, we need to construct the user message differently for Vision models
+  if (currentImageBase64) {
+      // For WebLLM Vision, we pass an object with image info
+      // Note: Implementation might vary slightly based on WebLLM version, 
+      // usually it accepts a multimodal content structure.
+      // Let's assume standard OpenAI vision format support in WebLLM
+      messages.push({
+          role: "user",
+          content: [
+              { type: "text", text: query },
+              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${currentImageBase64}` } }
+          ]
+      });
+  } else {
+      messages.push({ role: "user", content: query });
+  }
   
   try {
     const completion = await engine.chat.completions.create({
-      messages: [
-        { role: "system", content: config.systemPrompt },
-        { role: "user", content: query }
-      ],
+      messages: messages,
       temperature: 0.7,
       stream: true,
     });
@@ -182,82 +161,177 @@ async function runAgentLoop(query) {
     let fullResponse = "";
     
     for await (const chunk of completion) {
-      if (!isGenerating) break;
+      if (!isGenerating) break; // Stop button clicked
+      
       const delta = chunk.choices[0].delta.content;
       if (delta) {
-        if (accordion.classList.contains('open')) {
-          accordion.classList.remove('open');
-          accordionBtn.querySelector('span').textContent = "✨ View Thoughts";
-        }
         fullResponse += delta;
-        msgDiv.style.display = 'flex';
-        contentWrapper.innerHTML = parseMarkdown(fullResponse);
+        contentWrapper.innerHTML = parseContent(fullResponse);
         scrollToBottom();
       }
     }
+    
+    // Final render to handle code blocks/images
+    contentWrapper.innerHTML = parseContent(fullResponse);
+
   } catch (e) {
     contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
-    msgDiv.style.display = 'flex';
   } finally {
     isGenerating = false;
-    setStatus('ready');
     sendBtn.classList.remove('stop-btn');
     sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
   }
 }
 
 // ==========================================
-// 6. HELPERS
+// 6. CONTENT PARSING (Markdown & Images)
 // ==========================================
-function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
-
-function parseMarkdown(text) {
+function parseContent(text) {
   if (!text) return "";
+  
+  // Basic escaping first
   let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
-    `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn">Copy</button></div><div class="code-body"><pre>${code.trim()}</pre></div></div>`
-  );
+
+  // 1. Detect SVG Code and Render it
+  // Look for code blocks that look like SVG
+  const svgRegex = /&lt;code-block&gt;[\s\S]*?&lt;svg[\s\S]*?&lt;\/svg&gt;[\s\S]*?&lt;\/code-block&gt;/gi;
+  // Note: The model outputs raw text, we need to find ```svg ... ```
+  
+  // Actually, let's parse standard markdown code blocks first
+  // ```svg ... ``` or ``` ... ```
+  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+      const decodedCode = code.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+      
+      // If it's SVG
+      if (lang === 'svg' || decodedCode.trim().startsWith('<svg')) {
+          // Return a rendered image container with download button
+          return `
+            <div class="generated-image-container">
+              ${decodedCode}
+              <button class="download-btn" onclick="downloadSVG(this)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+              </button>
+            </div>
+          `;
+      }
+      
+      // Normal code block
+      return `
+        <div class="code-block">
+          <div class="code-header">
+            <span>${lang || 'code'}</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <div class="code-body"><pre>${code}</pre></div>
+        </div>
+      `;
+  });
+
+  // Newlines
   return escaped.replace(/\n/g, '<br>');
 }
+
+// Global helper for copy
+window.copyCode = function(btn) {
+    const code = btn.closest('.code-block').querySelector('pre').textContent;
+    navigator.clipboard.writeText(code);
+    btn.textContent = 'Copied';
+    setTimeout(() => btn.textContent = 'Copy', 1000);
+};
+
+// Global helper for download
+window.downloadSVG = function(btn) {
+    const svgEl = btn.previousElementSibling; // The SVG element
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const blob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = "opensky-image.svg";
+    link.click();
+    URL.revokeObjectURL(url);
+};
 
 // ==========================================
 // 7. EVENTS
 // ==========================================
-messagesArea.addEventListener('click', (e) => {
-  if (e.target.classList.contains('copy-btn')) {
-    const code = e.target.closest('.code-block').querySelector('pre').textContent;
-    navigator.clipboard.writeText(code);
-    e.target.textContent = 'Copied';
-    setTimeout(() => e.target.textContent = 'Copy', 1000);
-  }
+function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
+
+function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+        const base64String = ev.target.result.split(',')[1];
+        currentImageBase64 = base64String;
+        
+        // Show preview
+        imagePreview.src = ev.target.result;
+        imagePreviewContainer.classList.add('active');
+    };
+    reader.readAsDataURL(file);
+}
+
+removeImageBtn.addEventListener('click', () => {
+    currentImageBase64 = null;
+    imagePreviewContainer.classList.remove('active');
+    imageInput.value = '';
 });
 
+uploadBtn.addEventListener('click', () => imageInput.click());
+imageInput.addEventListener('change', handleImageUpload);
+
 async function handleAction() {
+  // STOP LOGIC
   if (isGenerating) {
     isGenerating = false;
-    if(engines.atlas) await engines.atlas.interruptGenerate();
-    if(engines.artist) await engines.artist.interruptGenerate();
+    if(engine) await engine.interruptGenerate();
     return;
   }
 
   const text = inputText.value.trim();
-  if (!text) return;
+  
+  // Require text even if image is present
+  if (!text) return; 
 
+  // --- Build User Message ---
   const userMsg = document.createElement('div');
   userMsg.className = 'message user';
-  userMsg.innerHTML = `<div class="user-bubble">${text}</div>`;
+  
+  let userBubbleHTML = `<div class="user-bubble">${text}`;
+  if (currentImageBase64) {
+      userBubbleHTML += `<img src="data:image/jpeg;base64,${currentImageBase64}" alt="User Image">`;
+  }
+  userBubbleHTML += `</div>`;
+  
+  userMsg.innerHTML = userBubbleHTML;
   messagesArea.appendChild(userMsg);
   
+  // Clear inputs
   inputText.value = '';
   inputText.style.height = 'auto';
-  
+  const tempImg = currentImageBase64; // Store before clearing
+  imagePreviewContainer.classList.remove('active');
+  currentImageBase64 = null;
+  imageInput.value = '';
+
+  // UI State
   isGenerating = true;
   sendBtn.classList.add('stop-btn');
   sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
-  setStatus('generating');
   
   scrollToBottom();
-  await runAgentLoop(text);
+  
+  // Pass logic to chat loop
+  // Note: We pass tempImg because runChatLoop expects global currentImageBase64, 
+  // but we cleared it. Let's refactor runChatLoop to accept image arg, or restore it.
+  // For simplicity, let's restore it inside the scope of the call.
+  currentImageBase64 = tempImg; 
+  await runChatLoop(text);
+  currentImageBase64 = null; // Clear again after use
 }
 
 inputText.addEventListener('input', function() { 
