@@ -18,7 +18,7 @@
         </svg>
       </div>
       <h1 class="loader-title">Opensky</h1>
-      <p class="loader-status" id="loadingLabel">Initializing Systems...</p>
+      <p class="loader-status" id="loadingLabel">Starting System...</p>
       
       <div class="progress-container">
         <div class="progress-bar" id="sliderFill"></div>
@@ -29,13 +29,14 @@
       
       <!-- Model Cards Container -->
       <div id="modelStatusContainer" class="model-status-container"></div>
+      
+      <!-- DEBUG LOG (Hidden unless error) -->
+      <div id="debugLog" style="display:none; margin-top: 1rem; padding: 1rem; background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; color: #991b1b; font-size: 0.75rem; text-align: left; word-break: break-word;"></div>
     </div>
   </div>
 
   <!-- Main Application -->
   <div class="app-container" id="chatContainer">
-    
-    <!-- Header -->
     <header class="app-header">
       <div class="header-left">
         <span class="app-title">Opensky</span>
@@ -49,12 +50,10 @@
       </div>
     </header>
 
-    <!-- Chat Area -->
     <main class="chat-area" id="messagesArea">
-      <!-- Welcome Message Removed as Requested -->
+      <!-- Welcome Message Removed -->
     </main>
 
-    <!-- Input Area -->
     <footer class="input-area">
       <div class="input-wrapper">
         <textarea 
