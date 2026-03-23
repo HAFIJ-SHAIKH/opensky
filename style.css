@@ -69,7 +69,19 @@ body {
 /* --- Reasoning Accordion --- */
 .reasoning-accordion { width: 100%; max-width: 90%; margin-bottom: 0.5rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; font-size: 0.8rem; }
 .reasoning-btn { width: 100%; background: transparent; border: none; padding: 0.6rem 0.75rem; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #475569; }
-.reasoning-body { display: none; padding: 0 0.75rem 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #64748b; white-space: pre-wrap; border-top: 1px solid #e2e8f0; margin-top: 0.5rem; padding-top: 0.5rem; max-height: 150px; overflow-y: auto; }
+.reasoning-body { 
+  display: none; 
+  padding: 0 0.75rem 0.75rem; 
+  font-family: 'JetBrains Mono', monospace; 
+  font-size: 0.7rem; 
+  color: #64748b; 
+  white-space: pre-wrap; 
+  border-top: 1px solid #e2e8f0; 
+  margin-top: 0.5rem; 
+  padding-top: 0.5rem; 
+  max-height: 200px; 
+  overflow-y: auto; 
+}
 .reasoning-accordion.open .reasoning-body { display: block; }
 
 /* --- Image Styles --- */
