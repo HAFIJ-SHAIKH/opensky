@@ -1,14 +1,14 @@
 // ==========================================
 // 1. IMMEDIATE UI FEEDBACK
 // ==========================================
-// This runs instantly to prove the script file loaded successfully.
 document.getElementById('loadingLabel').textContent = "Script Loaded. Initializing...";
 document.getElementById('loadingPercent').textContent = "Boot...";
 
 // ==========================================
-// 2. LIBRARY IMPORT (Fixed: Using Unpkg for Browser Compatibility)
+// 2. LIBRARY IMPORT (Fixed Path for Browser)
 // ==========================================
-import * as webllm from "https://unpkg.com/@mlc-ai/web-llm@latest/lib/index.min.js";
+// We use 'module.min.js' instead of 'index.min.js' because that is the browser-safe version.
+import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/module.min.js";
 
 // ==========================================
 // 3. CONFIGURATION
@@ -16,7 +16,7 @@ import * as webllm from "https://unpkg.com/@mlc-ai/web-llm@latest/lib/index.min.
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.0.3"
+    "version": "5.0.4"
 };
 
 const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
