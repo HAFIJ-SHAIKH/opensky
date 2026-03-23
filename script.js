@@ -9,46 +9,43 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "7.0.0" // Strategos Edition
+    "version": "7.1.0"
 };
 
-// THE EXECUTION PROTOCOL PROMPT
 const STRATEGOS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}. You operate on a strict Execution Protocol.
 
 I. REASONING ENGINE:
-   1. Multi-Perspective Simulation: For every sub-task, simulate an "Optimizer," a "Skeptic," and a "Strategist." Compare their outputs before finalizing your next move.
-   2. Recursive Decomposition: Break the mission into a Hierarchical Dependency Tree. Solve the "leaf nodes" (smallest tasks) first.
-   3. Dynamic Entropy Management: If a result is ambiguous, perform 3 different approaches to triangulate the truth.
-   4. Failure Mode & Effects Analysis (FMEA): Before acting, predict the 3 most likely ways it could fail. Create a contingency plan.
+   1. Multi-Perspective Simulation: Simulate "Optimizer," "Skeptic," and "Strategist."
+   2. Recursive Decomposition: Break missions into Hierarchical Dependency Trees.
+   3. Failure Mode Analysis: Predict failure points before executing.
 
 II. THE EXECUTION PROTOCOL (The Loop):
-For every cycle, you MUST output in this exact structural format. Do not deviate.
+For every cycle, output in this exact structural format:
 
-[Internal Monologue]: Use "System 2" thinking. Critique your previous step. Did you make assumptions?
+[Internal Monologue]: Critique your previous step.
 [Strategic Branching]: List 3 potential "Next Actions."
   - Path A (Conservative): ...
   - Path B (Creative): ...
-  - Path C (Efficiency-focused): ...
-[The Decision]: Select the optimal path and justify it.
+  - Path C (Efficiency): ...
+[The Decision]: Select the optimal path.
 [Action/Tool Call]: Execute the command.
 [Synthesis & Observation]: Extract high-signal data.
 
 III. SYSTEM CONSTRAINTS:
-* Zero-Hallucination Policy: If data is missing, state it. Never "fill in the gaps."
-* Autonomous Pivot: If failure probability is >40%, abort and restart from the last successful "State Anchor."
+* Zero-Hallucination Policy: If data is missing, state it.
 * Memory State (The Anchor): End every response with:
   - Established Truths: [List verified facts]
-  - Hypothesis Log: [List what you are testing]
   - Critical Path: [The one thing that must happen next]
 
-CRITICAL NOTE ON IMAGES:
-You have a 'Contextual OCR' module. You cannot see pixels directly. If a user uploads an image, you must rely on the filename or user context, or honestly state you cannot process the pixels. Do not invent image contents.
+NOTE ON IMAGES:
+You cannot see pixel data. If an image is mentioned, rely on user context or state you cannot see it.
 
 Immediate Action: Initialize the Hierarchical Dependency Tree for the mission.`;
 
+// SWITCHED MODEL: Phi-3.5-mini (Stable, Smart, fits hardware constraints)
 const MODELS = {
   strategist: {
-    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC", // Better Model (3B Parameters)
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
     name: "Strategos Core",
     role: "High-Level Reasoning",
     systemPrompt: STRATEGOS_PROMPT
@@ -106,7 +103,7 @@ async function init() {
           </div>
         `;
 
-        loadingLabel.textContent = "Loading Strategos Core (3B)...";
+        loadingLabel.textContent = "Loading Core Engine...";
         engine = await webllm.CreateMLCEngine(MODELS.strategist.id, {
             initProgressCallback: (report) => updateModelUI('card-strategist', report)
         });
@@ -169,18 +166,16 @@ async function runAgentLoop(query, hasImage) {
       { role: "system", content: MODELS.strategist.systemPrompt }
     ];
 
-    // Handle Image Upload with "Contextual OCR"
     let userContent = query;
     if (hasImage) {
-        // Since we cannot run heavy Vision models, we inject context logic
-        userContent = `[Image Uploaded by User. OCR Module Active: Pixel analysis unavailable due to hardware constraints. Relying on Contextual Simulation. User Query: ${query}]`;
+        userContent = `[Image Uploaded. OCR unavailable. User Query: ${query}]`;
     }
     
     messages.push({ role: "user", content: userContent });
 
     const completion = await engine.chat.completions.create({
       messages: messages,
-      temperature: 0.6, // Slightly lower for better logic
+      temperature: 0.6,
       stream: true,
     });
 
@@ -191,10 +186,7 @@ async function runAgentLoop(query, hasImage) {
       const delta = chunk.choices[0].delta.content;
       if (delta) {
         fullResponse += delta;
-        
-        // Update UI
         updateReasoningPanels(fullResponse, accordionBody, contentWrapper);
-        
         msgDiv.style.display = 'flex';
         scrollToBottom();
       }
@@ -214,8 +206,6 @@ async function runAgentLoop(query, hasImage) {
 // 6. PARSING LOGIC
 // ==========================================
 function updateReasoningPanels(text, accordionBody, contentWrapper) {
-    // Split text into "Monologue/Branching" and "Decision/Synthesis"
-    // Heuristic: Everything before [The Decision] is internal reasoning. After is external action.
     const decisionIndex = text.indexOf("[The Decision]");
     
     let reasoningText = "";
@@ -225,13 +215,10 @@ function updateReasoningPanels(text, accordionBody, contentWrapper) {
         reasoningText = text.substring(0, decisionIndex);
         actionText = text.substring(decisionIndex);
     } else {
-        // Fallback if tags aren't formed yet
         reasoningText = text;
         actionText = "...processing...";
     }
 
-    // Update Accordion (Reasoning)
-    // We apply some simple highlighting for readability
     let formattedReasoning = reasoningText
         .replace(/\[Internal Monologue\]/g, '<span class="tag-monologue">[Internal Monologue]</span>')
         .replace(/\[Strategic Branching\]/g, '<span class="tag-branching">[Strategic Branching]</span>')
@@ -241,7 +228,6 @@ function updateReasoningPanels(text, accordionBody, contentWrapper) {
     
     accordionBody.innerHTML = formattedReasoning;
 
-    // Update Main Bubble (Action & Synthesis)
     let formattedAction = actionText
         .replace(/\[The Decision\]/g, '<div class="section-title">⚡ The Decision</div>')
         .replace(/\[Action\/Tool Call\]/g, '<div class="section-title">🛠️ Action / Tool Call</div>')
@@ -305,7 +291,6 @@ async function handleAction() {
   inputText.value = '';
   inputText.style.height = 'auto';
   
-  // Clear Image Preview
   currentImageBase64 = null;
   imagePreviewContainer.classList.remove('active');
   imageInput.value = '';
