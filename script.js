@@ -1,19 +1,22 @@
-// IMMEDIATE UI UPDATE: Proof the script is running
-document.getElementById('loadingLabel').textContent = "Script Booting...";
-document.getElementById('loadingPercent').textContent = "Wait...";
+// ==========================================
+// 1. IMMEDIATE UI FEEDBACK
+// ==========================================
+// This runs instantly to prove the script file loaded successfully.
+document.getElementById('loadingLabel').textContent = "Script Loaded. Initializing...";
+document.getElementById('loadingPercent').textContent = "Boot...";
 
 // ==========================================
-// 1. LIBRARY IMPORT (Using esm.sh for best reliability)
+// 2. LIBRARY IMPORT (Fixed: Using Unpkg for Browser Compatibility)
 // ==========================================
-import * as webllm from "https://esm.sh/@mlc-ai/web-llm";
+import * as webllm from "https://unpkg.com/@mlc-ai/web-llm@latest/lib/index.min.js";
 
 // ==========================================
-// 2. CONFIGURATION
+// 3. CONFIGURATION
 // ==========================================
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.0.2"
+    "version": "5.0.3"
 };
 
 const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
@@ -41,7 +44,7 @@ const MODELS = {
 };
 
 // ==========================================
-// 3. DOM ELEMENTS
+// 4. DOM ELEMENTS
 // ==========================================
 const loadingScreen = document.getElementById('loadingScreen');
 const chatContainer = document.getElementById('chatContainer');
@@ -59,19 +62,18 @@ let engines = {};
 let isGenerating = false;
 
 // ==========================================
-// 4. INITIALIZATION
+// 5. INITIALIZATION
 // ==========================================
 async function init() {
     try {
-        // STEP 1: Update UI to show library is loading
-        loadingLabel.textContent = "Loading AI Library...";
+        // Step 1: Check Environment
+        loadingLabel.textContent = "Checking WebGPU Support...";
         
-        // STEP 2: Check WebGPU
         if (!navigator.gpu) {
             throw new Error("WebGPU not supported. Please use Chrome v113+ or Edge v113+.");
         }
 
-        // STEP 3: Prepare Model Cards
+        // Step 2: Prepare UI Cards
         modelStatusContainer.innerHTML = `
           <div class="model-card" id="card-atlas">
             <div class="model-card-name">Atlas Core</div>
@@ -83,19 +85,19 @@ async function init() {
           </div>
         `;
 
-        // STEP 4: Load Atlas
+        // Step 3: Load Atlas
         loadingLabel.textContent = "Downloading Atlas Core...";
         engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
             initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
         });
 
-        // STEP 5: Load Artist
+        // Step 4: Load Artist
         loadingLabel.textContent = "Downloading Artist Module...";
         engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
             initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
         });
 
-        // STEP 6: Success
+        // Step 5: Success
         loadingLabel.textContent = "Systems Ready.";
         loadingPercent.textContent = "100%";
         
@@ -132,7 +134,7 @@ function setStatus(status) {
 }
 
 // ==========================================
-// 5. AGENT LOGIC
+// 6. AGENT LOGIC
 // ==========================================
 function routeRequest(query) {
   const q = query.toLowerCase();
@@ -256,7 +258,7 @@ async function runAgentLoop(query) {
 }
 
 // ==========================================
-// 6. HELPERS
+// 7. HELPERS
 // ==========================================
 function scrollToBottom() {
     messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -272,7 +274,7 @@ function parseMarkdown(text) {
 }
 
 // ==========================================
-// 7. EVENTS
+// 8. EVENTS
 // ==========================================
 messagesArea.addEventListener('click', (e) => {
   if (e.target.classList.contains('copy-btn')) {
