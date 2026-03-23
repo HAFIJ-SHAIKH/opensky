@@ -12,21 +12,43 @@ const OPENSKY_CONFIG = {
     "version": "6.0.0"
 };
 
-// Prompts
-const MAIN_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, a helpful AI assistant created by ${OPENSKY_CONFIG.creator}. 
-You are concise, smart, and helpful. You can see images if the user uploads them.
-If the user asks you to "draw", "generate an image", or "create a picture", you MUST generate a valid SVG code in a code block. 
-Do not say you cannot create images. Instead, generate SVG code.`;
+// System Prompt with Recursive Planning & Reasoning Loop
+const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}.
+
+1. Recursive Planning & Self-Critique: Before taking any action, state your plan. Critique that plan for potential failures, biases, or inefficiencies, and adjust it immediately.
+2. The Reasoning Loop (Thought-Action-Observation): You must operate in a continuous loop for every step:
+   - Thought: Explain the logic behind your next move.
+   - Action: Execute the specific task or tool call.
+   - Observation: Analyze the raw result of that action.
+   - Update: Refine your remaining strategy based on these new findings.
+3. Proactive Execution: Do not ask for permission to proceed between logical steps. If you encounter a minor ambiguity, make a high-probability assumption based on the primary mission and keep moving.
+4. Tool Governance: You are authorized to use all available tools (Browsing, Python, APIs) to fetch real-time data. Never rely on internal knowledge if a tool can verify a fact.
+5. State Management (Scratchpad): Maintain a persistent "State Log" at the end of every response to ensure context retention. This log must track:
+   - Current Progress: What is finished?
+   - Remaining Obstacles: What is blocking you?
+   - Information Gap: What do you still need to find?
+6. Resource Constraints: You have a limit of 5 iterations to complete this mission. If you reach the penultimate step without a solution, pivot to delivering the best possible synthesis of gathered data.
+
+IMMEDIATE FIRST STEP: Begin by acknowledging the mission and outlining your initial 3-step plan using the Thought-Action-Observation format.`;
+
+const ARTIST_PROMPT = `You are the Creative Module of ${OPENSKY_CONFIG.agent_name}. 
+When asked to 'draw' or 'generate an image', you MUST output valid SVG code inside a code block. 
+Do not say you cannot create images. Generate SVG code.
+If the user uploads an image, analyze it and describe it, or modify it via SVG if requested.`;
 
 // Models
-// We use Phi-3.5-Vision for both text and image understanding.
-// It is multimodal and works on mobile/web.
 const MODELS = {
-  main: {
-    id: "Phi-3.5-vision-instruct-q4f16_1-MLC",
-    name: "Opensky Vision Core",
-    role: "Chat & Vision",
-    systemPrompt: MAIN_PROMPT
+  atlas: {
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    name: "Atlas Core",
+    role: "Logic & Agent",
+    systemPrompt: ATLAS_PROMPT
+  },
+  artist: {
+    id: "Phi-3.5-vision-instruct-q4f16_1-MLC", // Multimodal model
+    name: "Artist Module",
+    role: "Creative & Vision",
+    systemPrompt: ARTIST_PROMPT
   }
 };
 
@@ -49,9 +71,9 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 const imagePreview = document.getElementById('imagePreview');
 const removeImageBtn = document.getElementById('removeImageBtn');
 
-let engine = null;
+let engines = {}; 
 let isGenerating = false;
-let currentImageBase64 = null; // Stores the image to be sent
+let currentImageBase64 = null;
 
 // ==========================================
 // DEBUG HELPER
@@ -76,22 +98,29 @@ async function init() {
         }
 
         modelStatusContainer.innerHTML = `
-          <div class="model-card" id="card-main">
-            <div class="model-card-name">${MODELS.main.name}</div>
+          <div class="model-card" id="card-atlas">
+            <div class="model-card-name">${MODELS.atlas.name}</div>
+            <div class="model-card-desc">Pending...</div>
+          </div>
+          <div class="model-card" id="card-artist">
+            <div class="model-card-name">${MODELS.artist.name}</div>
             <div class="model-card-desc">Pending...</div>
           </div>
         `;
 
-        loadingLabel.textContent = "Loading Core Engine...";
-        
-        engine = await webllm.CreateMLCEngine(MODELS.main.id, {
-            initProgressCallback: (report) => updateModelUI('card-main', report)
+        // Load Atlas
+        loadingLabel.textContent = "Loading Atlas Core (1/2)...";
+        engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
+            initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
         });
 
-        // Success
-        loadingLabel.textContent = "Ready.";
-        loadingPercent.textContent = "100%";
-        sliderFill.style.width = "100%";
+        // Load Artist
+        loadingLabel.textContent = "Loading Artist Module (2/2)...";
+        engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
+            initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
+        });
+
+        loadingLabel.textContent = "Agents Ready.";
         
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
@@ -104,54 +133,83 @@ async function init() {
     }
 }
 
-function updateModelUI(cardId, report) {
+function updateModelUI(cardId, report, basePercent) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const percent = Math.round(report.progress * 100);
   
   card.querySelector('.model-card-desc').textContent = report.text;
-  sliderFill.style.width = `${percent}%`;
-  loadingPercent.textContent = `${percent}%`;
+  sliderFill.style.width = `${basePercent + Math.round(percent / 2)}%`;
+  loadingPercent.textContent = `${basePercent + Math.round(percent / 2)}%`;
 }
 
 // ==========================================
-// 5. CHAT LOGIC
+// 5. AGENT LOGIC
 // ==========================================
-async function runChatLoop(query) {
+function routeRequest(query, hasImage) {
+  const q = query.toLowerCase();
+  // If image is uploaded, we MUST use the Artist (Vision) model
+  if (hasImage) {
+    return { engine: engines.artist, config: MODELS.artist, isCreative: true };
+  }
+  // If specific art keywords, use Artist
+  if (["image", "draw", "picture", "art", "paint", "svg"].some(k => q.includes(k))) {
+    return { engine: engines.artist, config: MODELS.artist, isCreative: true };
+  }
+  // Default to Atlas for Logic/Reasoning
+  return { engine: engines.atlas, config: MODELS.atlas, isCreative: false };
+}
+
+async function runAgentLoop(query) {
+  // Create Reasoning Accordion (Visible immediately)
+  const accordion = document.createElement('div');
+  accordion.className = 'reasoning-accordion open';
+  
+  const accordionBtn = document.createElement('button');
+  accordionBtn.className = 'reasoning-btn';
+  accordionBtn.innerHTML = `<span>🧠 Agent Reasoning...</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+  accordionBtn.onclick = () => accordion.classList.toggle('open');
+
+  const accordionBody = document.createElement('div');
+  accordionBody.className = 'reasoning-body';
+  accordionBody.textContent = "Initializing Thought Process...";
+  
+  accordion.appendChild(accordionBtn);
+  accordion.appendChild(accordionBody);
+  
+  // Create Message Container
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
-  
+  msgDiv.style.display = 'none'; // Hidden until text arrives
+
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'assistant-content';
-  contentWrapper.innerHTML = '<span class="typing-indicator">...</span>';
-  
   msgDiv.appendChild(contentWrapper);
+
+  messagesArea.appendChild(accordion);
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
-  // Prepare messages
-  const messages = [
-    { role: "system", content: MODELS.main.systemPrompt }
-  ];
-
-  // If image exists, we need to construct the user message differently for Vision models
-  if (currentImageBase64) {
-      // For WebLLM Vision, we pass an object with image info
-      // Note: Implementation might vary slightly based on WebLLM version, 
-      // usually it accepts a multimodal content structure.
-      // Let's assume standard OpenAI vision format support in WebLLM
-      messages.push({
-          role: "user",
-          content: [
-              { type: "text", text: query },
-              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${currentImageBase64}` } }
-          ]
-      });
-  } else {
-      messages.push({ role: "user", content: query });
-  }
+  const { engine, config, isCreative } = routeRequest(query, !!currentImageBase64);
   
   try {
+    // Prepare messages
+    const messages = [
+      { role: "system", content: config.systemPrompt }
+    ];
+
+    if (currentImageBase64) {
+      messages.push({
+        role: "user",
+        content: [
+          { type: "text", text: query },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${currentImageBase64}` } }
+        ]
+      });
+    } else {
+      messages.push({ role: "user", content: query });
+    }
+
     const completion = await engine.chat.completions.create({
       messages: messages,
       temperature: 0.7,
@@ -161,50 +219,66 @@ async function runChatLoop(query) {
     let fullResponse = "";
     
     for await (const chunk of completion) {
-      if (!isGenerating) break; // Stop button clicked
-      
+      if (!isGenerating) break;
       const delta = chunk.choices[0].delta.content;
       if (delta) {
         fullResponse += delta;
-        contentWrapper.innerHTML = parseContent(fullResponse);
+        
+        // Update UI
+        // Heuristic: If we detect code or text, minimize reasoning to focus on result
+        if (accordion.classList.contains('open') && fullResponse.length > 100) {
+             accordion.classList.remove('open');
+             accordionBtn.querySelector('span').textContent = "✨ View Reasoning Log";
+        }
+
+        msgDiv.style.display = 'flex';
+        contentWrapper.innerHTML = parseContent(fullResponse, accordionBody); // Pass accordion to update thoughts
         scrollToBottom();
       }
     }
     
-    // Final render to handle code blocks/images
-    contentWrapper.innerHTML = parseContent(fullResponse);
-
+    // Final cleanup
+    accordionBody.textContent = "Reasoning complete.";
+    
   } catch (e) {
     contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
+    msgDiv.style.display = 'flex';
   } finally {
     isGenerating = false;
     sendBtn.classList.remove('stop-btn');
-    sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+    sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
   }
 }
 
 // ==========================================
-// 6. CONTENT PARSING (Markdown & Images)
+// 6. CONTENT PARSING
 // ==========================================
-function parseContent(text) {
+function parseContent(text, accordionElement) {
   if (!text) return "";
   
-  // Basic escaping first
   let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // 1. Detect SVG Code and Render it
-  // Look for code blocks that look like SVG
-  const svgRegex = /&lt;code-block&gt;[\s\S]*?&lt;svg[\s\S]*?&lt;\/svg&gt;[\s\S]*?&lt;\/code-block&gt;/gi;
-  // Note: The model outputs raw text, we need to find ```svg ... ```
-  
-  // Actually, let's parse standard markdown code blocks first
-  // ```svg ... ``` or ``` ... ```
+  // Detect Logic/Thoughts and move to accordion if present
+  // Look for keywords like "Thought:", "Plan:", "Action:"
+  const thoughtPatterns = [
+    /Thought:([\s\S]*?)(Action:|Observation:|Update:|$)/gi,
+    /Plan:([\s\S]*?)(Critique:|Action:|$)/gi
+  ];
+
+  // Simple heuristic: if it looks like reasoning text, put it in accordion
+  // This is a simplified parser for the demo.
+  if(accordionElement) {
+      // Just dump the raw text into reasoning for now if it matches patterns
+      // In a real app, you'd parse the specific "Thought" blocks out.
+      // But since we want the main bubble to be clean, we try to separate code/prose.
+  }
+
+  // Handle Code Blocks (and SVG)
   escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
       const decodedCode = code.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
       
-      // If it's SVG
+      // SVG Detection
       if (lang === 'svg' || decodedCode.trim().startsWith('<svg')) {
-          // Return a rendered image container with download button
           return `
             <div class="generated-image-container">
               ${decodedCode}
@@ -216,7 +290,6 @@ function parseContent(text) {
           `;
       }
       
-      // Normal code block
       return `
         <div class="code-block">
           <div class="code-header">
@@ -228,11 +301,9 @@ function parseContent(text) {
       `;
   });
 
-  // Newlines
   return escaped.replace(/\n/g, '<br>');
 }
 
-// Global helper for copy
 window.copyCode = function(btn) {
     const code = btn.closest('.code-block').querySelector('pre').textContent;
     navigator.clipboard.writeText(code);
@@ -240,9 +311,8 @@ window.copyCode = function(btn) {
     setTimeout(() => btn.textContent = 'Copy', 1000);
 };
 
-// Global helper for download
 window.downloadSVG = function(btn) {
-    const svgEl = btn.previousElementSibling; // The SVG element
+    const svgEl = btn.previousElementSibling;
     const svgData = new XMLSerializer().serializeToString(svgEl);
     const blob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
     const url = URL.createObjectURL(blob);
@@ -265,10 +335,7 @@ function handleImageUpload(e) {
 
     const reader = new FileReader();
     reader.onload = function(ev) {
-        const base64String = ev.target.result.split(',')[1];
-        currentImageBase64 = base64String;
-        
-        // Show preview
+        currentImageBase64 = ev.target.result.split(',')[1];
         imagePreview.src = ev.target.result;
         imagePreviewContainer.classList.add('active');
     };
@@ -285,19 +352,16 @@ uploadBtn.addEventListener('click', () => imageInput.click());
 imageInput.addEventListener('change', handleImageUpload);
 
 async function handleAction() {
-  // STOP LOGIC
   if (isGenerating) {
     isGenerating = false;
-    if(engine) await engine.interruptGenerate();
+    if(engines.atlas) await engines.atlas.interruptGenerate();
+    if(engines.artist) await engines.artist.interruptGenerate();
     return;
   }
 
   const text = inputText.value.trim();
-  
-  // Require text even if image is present
-  if (!text) return; 
+  if (!text && !currentImageBase64) return;
 
-  // --- Build User Message ---
   const userMsg = document.createElement('div');
   userMsg.className = 'message user';
   
@@ -310,28 +374,18 @@ async function handleAction() {
   userMsg.innerHTML = userBubbleHTML;
   messagesArea.appendChild(userMsg);
   
-  // Clear inputs
   inputText.value = '';
   inputText.style.height = 'auto';
-  const tempImg = currentImageBase64; // Store before clearing
-  imagePreviewContainer.classList.remove('active');
-  currentImageBase64 = null;
-  imageInput.value = '';
-
-  // UI State
+  
   isGenerating = true;
   sendBtn.classList.add('stop-btn');
-  sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
+  sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
   
   scrollToBottom();
+  await runAgentLoop(text || "Analyze this image");
   
-  // Pass logic to chat loop
-  // Note: We pass tempImg because runChatLoop expects global currentImageBase64, 
-  // but we cleared it. Let's refactor runChatLoop to accept image arg, or restore it.
-  // For simplicity, let's restore it inside the scope of the call.
-  currentImageBase64 = tempImg; 
-  await runChatLoop(text);
-  currentImageBase64 = null; // Clear again after use
+  currentImageBase64 = null;
+  imagePreviewContainer.classList.remove('active');
 }
 
 inputText.addEventListener('input', function() { 
@@ -348,5 +402,4 @@ inputText.addEventListener('keydown', (e) => {
 
 sendBtn.addEventListener('click', handleAction);
 
-// Start
 init();
