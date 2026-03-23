@@ -6,6 +6,10 @@
   --text-main: #111827;
   --text-muted: #6b7280;
   --border: #e5e7eb;
+  --accent-blue: #3b82f6;
+  --accent-green: #10b981;
+  --accent-red: #ef4444;
+  --accent-yellow: #f59e0b;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,12 +22,6 @@ body {
   overflow: hidden;
 }
 
-/* --- Loading Screen --- */
-.loading-screen {
-  position: fixed; inset: 0; background: white;
-  display: flex; justify-content: center; align-items: center;
-  z-index: 9999; transition: opacity 0.5s ease, visibility 0.5s ease;
-}
 .loading-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .loader-content { width: 100%; max-width: 400px; padding: 2rem; text-align: center; }
 .logo-mark { color: var(--primary); margin-bottom: 1rem; animation: float 3s ease-in-out infinite; }
@@ -66,35 +64,32 @@ body {
 .message.assistant { align-items: flex-start; }
 .assistant-content { background: transparent; padding: 0; max-width: 90%; font-size: 0.95rem; line-height: 1.6; }
 
-/* --- Reasoning Accordion --- */
+/* --- Protocol Reasoning Accordion --- */
 .reasoning-accordion { width: 100%; max-width: 90%; margin-bottom: 0.5rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; font-size: 0.8rem; }
 .reasoning-btn { width: 100%; background: transparent; border: none; padding: 0.6rem 0.75rem; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #475569; }
 .reasoning-body { 
   display: none; 
-  padding: 0 0.75rem 0.75rem; 
+  padding: 0.75rem; 
   font-family: 'JetBrains Mono', monospace; 
-  font-size: 0.7rem; 
-  color: #64748b; 
+  font-size: 0.75rem; 
+  color: #334155; 
   white-space: pre-wrap; 
   border-top: 1px solid #e2e8f0; 
-  margin-top: 0.5rem; 
-  padding-top: 0.5rem; 
-  max-height: 200px; 
+  max-height: 300px; 
   overflow-y: auto; 
+  line-height: 1.4;
 }
 .reasoning-accordion.open .reasoning-body { display: block; }
 
-/* --- Image Styles --- */
-.generated-image-container { margin-top: 0.75rem; position: relative; display: inline-block; }
-.generated-image-container img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); background: white; }
-.download-btn { position: absolute; bottom: 10px; right: 10px; background: white; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 0.7rem; cursor: pointer; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 4px; }
-.download-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+/* Protocol Formatting in Accordion */
+.tag-monologue { color: #6b7280; font-style: italic; }
+.tag-branching { color: #8b5cf6; font-weight: bold; }
+.tag-decision { color: #059669; font-weight: bold; }
+.tag-failure { color: #dc2626; background: #fef2f2; padding: 2px; border-radius: 2px; }
 
-.code-block { background: #1e293b; border-radius: 8px; margin: 0.5rem 0; overflow: hidden; }
-.code-header { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: #334155; font-size: 0.7rem; color: #94a3b8; }
-.copy-btn { background: #475569; border: none; border-radius: 4px; font-size: 0.65rem; padding: 2px 6px; cursor: pointer; color: white; }
-.copy-btn:hover { background: white; color: #1e293b; }
-.code-body { padding: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; overflow-x: auto; color: #e2e8f0; }
+/* Main Bubble Formatting */
+.section-title { font-weight: 700; color: #1e293b; margin-top: 0.5rem; margin-bottom: 0.25rem; font-size: 0.9rem; }
+.content-block { margin-bottom: 0.5rem; }
 
 /* --- Input Area --- */
 .input-area { padding: 1rem 1.5rem; background: var(--bg-card); border-top: 1px solid var(--border); flex-shrink: 0; }
