@@ -1,11 +1,4 @@
-// ==========================================
-// SAFETY WRAPPER: Catch any startup errors
-// ==========================================
-window.onerror = function(message, source, lineno, colno, error) {
-    alert("Script Error: " + message);
-    document.getElementById('loadingLabel').textContent = "Error: " + message;
-    document.getElementById('loadingLabel').style.color = "red";
-};
+import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/index.min.js";
 
 // ==========================================
 // 1. CONFIGURATION
@@ -13,11 +6,17 @@ window.onerror = function(message, source, lineno, colno, error) {
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "4.2.0-Diagnostic"
+    "version": "5.0.0-Ultra"
 };
 
-const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Follow the Thought-Action-Observation loop strictly. Be precise.`;
-const ARTIST_PROMPT = `You are the Creative Module of ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Generate vivid image prompts.`;
+const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
+Before answering, you must think through the problem step-by-step.
+1. Analyze the request.
+2. Plan the steps.
+3. Execute the plan.
+Be concise and accurate. If asked about your creator, state it is ${OPENSKY_CONFIG.creator}.`;
+
+const ARTIST_PROMPT = `You are the creative module of ${OPENSKY_CONFIG.agent_name}. Generate vivid image prompts.`;
 
 const MODELS = {
   atlas: {
@@ -35,7 +34,7 @@ const MODELS = {
 };
 
 // ==========================================
-// 2. DOM ELEMENTS (With Safety Checks)
+// 2. DOM ELEMENTS
 // ==========================================
 const loadingScreen = document.getElementById('loadingScreen');
 const chatContainer = document.getElementById('chatContainer');
@@ -45,83 +44,60 @@ const sendBtn = document.getElementById('sendBtn');
 const sliderFill = document.getElementById('sliderFill');
 const loadingPercent = document.getElementById('loadingPercent');
 const loadingLabel = document.getElementById('loadingLabel');
-const statusDot = document.getElementById('statusDot');
+const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
-const thinkingPanel = document.getElementById('thinkingPanel');
-const thinkingContent = document.getElementById('thinkingContent');
-
-// Verify all elements exist
-if (!loadingLabel || !loadingPercent || !sendBtn) {
-    alert("Critical Error: HTML elements missing. Check IDs in HTML.");
-    throw new Error("Missing HTML elements");
-}
-
-const ICON_SEND = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
-const ICON_STOP = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
+const modelStatusContainer = document.getElementById('modelStatusContainer');
 
 let engines = {}; 
 let isGenerating = false;
 
 // ==========================================
-// 3. MAIN INITIALIZATION
+// 3. INITIALIZATION
 // ==========================================
 async function init() {
     try {
-        // STEP 1: Script Active
-        loadingLabel.textContent = "Script Active...";
-        loadingPercent.textContent = "0%";
-        console.log("Script started.");
-
-        // STEP 2: Import Library
-        loadingLabel.textContent = "Importing AI Library...";
-        const webllm = await import("https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/lib/module.min.js");
-        loadingLabel.textContent = "Library Imported.";
+        loadingLabel.textContent = "Connecting to Network...";
         
-        // STEP 3: Check WebGPU
-        loadingLabel.textContent = "Checking WebGPU...";
         if (!navigator.gpu) {
-            throw new Error("WebGPU NOT FOUND. You must use Chrome v113+ or Edge v113+ on a compatible device.");
+            throw new Error("WebGPU not supported. Please use Chrome v113+ or Edge v113+.");
         }
-        
-        // STEP 4: Prepare UI
-        const statusContainer = document.createElement('div');
-        statusContainer.className = 'model-load-status';
-        statusContainer.innerHTML = `
+
+        // UI Prep
+        modelStatusContainer.innerHTML = `
           <div class="model-card" id="card-atlas">
-            <div class="model-card-name">Atlas (Logic)</div>
-            <div class="model-card-desc">Initializing...</div>
-            <div class="slider-track"><div class="slider-fill" style="width:0%"></div></div>
+            <div class="model-card-name">Atlas Core</div>
+            <div class="model-card-desc">Idle</div>
           </div>
           <div class="model-card" id="card-artist">
-            <div class="model-card-name">Artist (Creative)</div>
-            <div class="model-card-desc">Initializing...</div>
-            <div class="slider-track"><div class="slider-fill" style="width:0%"></div></div>
+            <div class="model-card-name">Artist Module</div>
+            <div class="model-card-desc">Idle</div>
           </div>
         `;
-        loadingLabel.parentNode.insertBefore(statusContainer, loadingPercent);
 
-        // STEP 5: Load Atlas
-        loadingLabel.textContent = "Downloading Atlas Core...";
+        // Load Models
+        loadingLabel.textContent = "Downloading Core Intelligence...";
         engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
             initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
         });
 
-        // STEP 6: Load Artist
-        loadingLabel.textContent = "Downloading Artist Module...";
+        loadingLabel.textContent = "Downloading Creative Module...";
         engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
             initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
         });
 
-        // STEP 7: Finish
-        loadingLabel.textContent = "Systems Ready.";
+        loadingLabel.textContent = "Ready.";
         loadingPercent.textContent = "100%";
-        setTimeout(showChat, 500);
+        
+        setTimeout(() => {
+            loadingScreen.classList.add('hidden');
+            chatContainer.classList.add('active');
+            setStatus('ready');
+        }, 500);
 
     } catch (err) {
         console.error(err);
-        loadingLabel.textContent = `CRITICAL ERROR: ${err.message}`;
+        loadingLabel.textContent = `Error: ${err.message}`;
         loadingLabel.style.color = "red";
-        loadingPercent.textContent = "Failed";
     }
 }
 
@@ -129,16 +105,19 @@ function updateModelUI(cardId, report, basePercent) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const percent = Math.round(report.progress * 100);
-  card.querySelector('.slider-fill').style.width = `${percent}%`;
+  
   card.querySelector('.model-card-desc').textContent = report.text;
+  sliderFill.style.width = `${basePercent + Math.round(percent / 2)}%`;
   loadingPercent.textContent = `${basePercent + Math.round(percent / 2)}%`;
 }
 
-function showChat() {
-  loadingScreen.classList.add('hidden');
-  chatContainer.style.display = 'flex';
-  inputText.focus();
-  setStatus('online');
+function setStatus(status) {
+  const dot = statusIndicator.querySelector('.status-dot');
+  statusText.textContent = status === 'ready' ? 'Ready' : 'Processing...';
+  statusText.className = `status-text ${status === 'ready' ? '' : 'loading'}`;
+  dot.className = `status-dot ${status === 'ready' ? '' : 'loading'}`;
+  
+  sendBtn.disabled = status !== 'ready' && !isGenerating; // Enable during generation for stop
 }
 
 // ==========================================
@@ -146,17 +125,74 @@ function showChat() {
 // ==========================================
 function routeRequest(query) {
   const q = query.toLowerCase();
-  if (["image", "draw", "picture", "art", "paint", "photo", "sketch"].some(k => q.includes(k))) {
+  if (["image", "draw", "picture", "art", "paint"].some(k => q.includes(k))) {
     return { engine: engines.artist, config: MODELS.artist };
   }
   return { engine: engines.atlas, config: MODELS.atlas };
 }
 
 async function runAgentLoop(query) {
-  thinkingPanel.style.display = 'block';
-  const { engine, config } = routeRequest(query);
-  thinkingContent.textContent = `[Router] Selected: ${config.name}...`;
+  // 1. Create the container for this interaction
+  const container = document.createElement('div');
+  container.className = 'interaction-block';
 
+  // 2. Create the Thoughts Accordion (Initially Expanded)
+  const accordion = document.createElement('div');
+  accordion.className = 'thoughts-accordion open'; // Starts open
+  
+  const accordionBtn = document.createElement('button');
+  accordionBtn.className = 'thoughts-btn';
+  accordionBtn.innerHTML = `
+    <span>⚡ Agent Thinking...</span>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  `;
+  accordionBtn.onclick = () => accordion.classList.toggle('open');
+
+  const accordionBody = document.createElement('div');
+  accordionBody.className = 'thoughts-body';
+  accordionBody.textContent = "Initializing reasoning loop...";
+  
+  accordion.appendChild(accordionBtn);
+  accordion.appendChild(accordionBody);
+  
+  // 3. Create the Message Container (Initially Empty)
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'message assistant';
+  msgDiv.style.display = 'none'; // Hide until we have text
+
+  const contentWrapper = document.createElement('div');
+  contentWrapper.className = 'assistant-content';
+  msgDiv.appendChild(contentWrapper);
+
+  // Append to chat
+  messagesArea.appendChild(accordion);
+  messagesArea.appendChild(msgDiv);
+  scrollToBottom();
+
+  // 4. Thought Process
+  const { engine, config } = routeRequest(query);
+  
+  // Simulate "Thinking" phase before streaming
+  const thoughts = [
+    `[Router] Selected Model: ${config.name}`,
+    `[Plan] Analyzing user request: "${query.substring(0, 30)}..."`,
+    `[Action] Executing generation stream...`
+  ];
+  
+  // Update UI with thoughts quickly
+  let thoughtIdx = 0;
+  const thoughtInterval = setInterval(() => {
+    if(thoughtIdx < thoughts.length) {
+      accordionBody.textContent = thoughts.slice(0, thoughtIdx + 1).join('\n');
+      thoughtIdx++;
+    } else {
+      clearInterval(thoughtInterval);
+    }
+  }, 300);
+
+  // 5. Generation
   try {
     const completion = await engine.chat.completions.create({
       messages: [
@@ -167,75 +203,74 @@ async function runAgentLoop(query) {
       stream: true,
     });
 
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message sky';
-    msgDiv.innerHTML = `<div style="font-size:0.65rem;color:var(--fg-muted);margin-bottom:4px;">Powered by ${config.name}</div>`;
-    const contentWrapper = document.createElement('div');
-    contentWrapper.className = 'sky-content';
-    msgDiv.appendChild(contentWrapper);
-    messagesArea.appendChild(msgDiv);
-
     let fullResponse = "";
+    
     for await (const chunk of completion) {
-      if (!isGenerating) break;
+      if (!isGenerating) {
+        accordionBody.textContent += "\n[SYSTEM] Stopped by user.";
+        break;
+      }
+
       const delta = chunk.choices[0].delta.content;
       if (delta) {
+        // Transition Accordion to Collapsed Button
+        if (accordion.classList.contains('open')) {
+          clearInterval(thoughtInterval);
+          accordion.classList.remove('open');
+          accordionBtn.innerHTML = `
+            <span>✨ View Thoughts</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          `;
+        }
+
         fullResponse += delta;
+        msgDiv.style.display = 'flex'; // Show the message bubble
         contentWrapper.innerHTML = parseMarkdown(fullResponse);
-        smartScroll();
+        scrollToBottom();
       }
     }
+    
+    // Final thought update
+    accordionBody.textContent += `\n[Done] Response generated.`;
+
   } catch (e) {
-    appendMessage("sky", `Error: ${e.message}`);
+    accordionBody.textContent += `\n[Error] ${e.message}`;
+    contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
+    msgDiv.style.display = 'flex';
   } finally {
-    thinkingPanel.style.display = 'none';
     isGenerating = false;
-    setStatus('online');
+    setStatus('ready');
+    sendBtn.classList.remove('stop-btn');
+    sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
   }
 }
 
 // ==========================================
-// 5. UI HELPERS & EVENTS
+// 5. HELPERS
 // ==========================================
-function smartScroll() {
-  const threshold = 150;
-  const isNearBottom = messagesArea.scrollHeight - messagesArea.scrollTop <= messagesArea.clientHeight + threshold;
-  if (isNearBottom) messagesArea.scrollTop = messagesArea.scrollHeight;
-}
-
-function setStatus(status) {
-  sendBtn.innerHTML = status === 'online' ? ICON_SEND : ICON_STOP;
-  sendBtn.classList.toggle('stop-active', status !== 'online');
-  sendBtn.disabled = false;
-  statusText.textContent = status === 'online' ? 'Agent Ready' : 'Processing...';
-  statusDot.className = `status-dot ${status === 'online' ? '' : 'loading'}`;
+function scrollToBottom() {
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
 
 function parseMarkdown(text) {
   if (!text) return "";
   let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
-    `<div class="code-block"><div class="block-header"><span class="block-label">${lang||'code'}</span><button class="copy-btn">Copy</button></div><div class="block-body"><pre>${code.trim()}</pre></div></div>`
+    `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn">Copy</button></div><div class="code-body"><pre>${code.trim()}</pre></div></div>`
   );
   return escaped.replace(/\n/g, '<br>');
 }
 
-function appendMessage(role, text) {
-  const div = document.createElement('div');
-  div.className = `message ${role === 'user' ? 'user' : 'sky'}`;
-  const bubble = document.createElement('div');
-  bubble.className = role === 'user' ? 'user-bubble' : 'sky-content';
-  bubble.innerHTML = role === 'user' ? text : parseMarkdown(text);
-  div.appendChild(bubble);
-  messagesArea.appendChild(div);
-  messagesArea.scrollTop = messagesArea.scrollHeight;
-}
-
+// ==========================================
+// 6. EVENTS
+// ==========================================
 messagesArea.addEventListener('click', (e) => {
   if (e.target.classList.contains('copy-btn')) {
     const code = e.target.closest('.code-block').querySelector('pre').textContent;
     navigator.clipboard.writeText(code);
-    e.target.textContent = 'Done';
+    e.target.textContent = 'Copied';
     setTimeout(() => e.target.textContent = 'Copy', 1000);
   }
 });
@@ -245,25 +280,44 @@ async function handleAction() {
     isGenerating = false;
     if(engines.atlas) await engines.atlas.interruptGenerate();
     if(engines.artist) await engines.artist.interruptGenerate();
-    setStatus('online');
     return;
   }
 
   const text = inputText.value.trim();
   if (!text) return;
+
+  // Add User Message
+  const userMsg = document.createElement('div');
+  userMsg.className = 'message user';
+  userMsg.innerHTML = `<div class="user-bubble">${text}</div>`;
+  messagesArea.appendChild(userMsg);
   
-  appendMessage("user", text);
   inputText.value = '';
   inputText.style.height = 'auto';
   
+  // UI State
   isGenerating = true;
+  sendBtn.classList.add('stop-btn');
+  sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
   setStatus('generating');
+  
+  scrollToBottom();
   await runAgentLoop(text);
 }
 
-inputText.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px'; });
-inputText.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAction(); } });
+inputText.addEventListener('input', function() { 
+  this.style.height = 'auto'; 
+  this.style.height = Math.min(this.scrollHeight, 100) + 'px'; 
+});
+
+inputText.addEventListener('keydown', (e) => { 
+  if (e.key === 'Enter' && !e.shiftKey) { 
+    e.preventDefault(); 
+    handleAction(); 
+  } 
+});
+
 sendBtn.addEventListener('click', handleAction);
 
-// --- START ---
+// Start
 init();
