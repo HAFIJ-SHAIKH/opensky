@@ -1,12 +1,19 @@
-import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/index.min.js";
+// IMMEDIATE UI UPDATE: Proof the script is running
+document.getElementById('loadingLabel').textContent = "Script Booting...";
+document.getElementById('loadingPercent').textContent = "Wait...";
 
 // ==========================================
-// 1. CONFIGURATION
+// 1. LIBRARY IMPORT (Using esm.sh for best reliability)
+// ==========================================
+import * as webllm from "https://esm.sh/@mlc-ai/web-llm";
+
+// ==========================================
+// 2. CONFIGURATION
 // ==========================================
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.0.0-Ultra"
+    "version": "5.0.2"
 };
 
 const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
@@ -34,7 +41,7 @@ const MODELS = {
 };
 
 // ==========================================
-// 2. DOM ELEMENTS
+// 3. DOM ELEMENTS
 // ==========================================
 const loadingScreen = document.getElementById('loadingScreen');
 const chatContainer = document.getElementById('chatContainer');
@@ -52,17 +59,19 @@ let engines = {};
 let isGenerating = false;
 
 // ==========================================
-// 3. INITIALIZATION
+// 4. INITIALIZATION
 // ==========================================
 async function init() {
     try {
-        loadingLabel.textContent = "Connecting to Network...";
+        // STEP 1: Update UI to show library is loading
+        loadingLabel.textContent = "Loading AI Library...";
         
+        // STEP 2: Check WebGPU
         if (!navigator.gpu) {
             throw new Error("WebGPU not supported. Please use Chrome v113+ or Edge v113+.");
         }
 
-        // UI Prep
+        // STEP 3: Prepare Model Cards
         modelStatusContainer.innerHTML = `
           <div class="model-card" id="card-atlas">
             <div class="model-card-name">Atlas Core</div>
@@ -74,18 +83,20 @@ async function init() {
           </div>
         `;
 
-        // Load Models
-        loadingLabel.textContent = "Downloading Core Intelligence...";
+        // STEP 4: Load Atlas
+        loadingLabel.textContent = "Downloading Atlas Core...";
         engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
             initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
         });
 
-        loadingLabel.textContent = "Downloading Creative Module...";
+        // STEP 5: Load Artist
+        loadingLabel.textContent = "Downloading Artist Module...";
         engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
             initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
         });
 
-        loadingLabel.textContent = "Ready.";
+        // STEP 6: Success
+        loadingLabel.textContent = "Systems Ready.";
         loadingPercent.textContent = "100%";
         
         setTimeout(() => {
@@ -117,11 +128,11 @@ function setStatus(status) {
   statusText.className = `status-text ${status === 'ready' ? '' : 'loading'}`;
   dot.className = `status-dot ${status === 'ready' ? '' : 'loading'}`;
   
-  sendBtn.disabled = status !== 'ready' && !isGenerating; // Enable during generation for stop
+  sendBtn.disabled = status !== 'ready' && !isGenerating; 
 }
 
 // ==========================================
-// 4. AGENT LOGIC
+// 5. AGENT LOGIC
 // ==========================================
 function routeRequest(query) {
   const q = query.toLowerCase();
@@ -174,14 +185,12 @@ async function runAgentLoop(query) {
   // 4. Thought Process
   const { engine, config } = routeRequest(query);
   
-  // Simulate "Thinking" phase before streaming
   const thoughts = [
     `[Router] Selected Model: ${config.name}`,
     `[Plan] Analyzing user request: "${query.substring(0, 30)}..."`,
     `[Action] Executing generation stream...`
   ];
   
-  // Update UI with thoughts quickly
   let thoughtIdx = 0;
   const thoughtInterval = setInterval(() => {
     if(thoughtIdx < thoughts.length) {
@@ -232,7 +241,6 @@ async function runAgentLoop(query) {
       }
     }
     
-    // Final thought update
     accordionBody.textContent += `\n[Done] Response generated.`;
 
   } catch (e) {
@@ -248,7 +256,7 @@ async function runAgentLoop(query) {
 }
 
 // ==========================================
-// 5. HELPERS
+// 6. HELPERS
 // ==========================================
 function scrollToBottom() {
     messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -264,7 +272,7 @@ function parseMarkdown(text) {
 }
 
 // ==========================================
-// 6. EVENTS
+// 7. EVENTS
 // ==========================================
 messagesArea.addEventListener('click', (e) => {
   if (e.target.classList.contains('copy-btn')) {
