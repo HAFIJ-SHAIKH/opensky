@@ -1,7 +1,7 @@
 // ==========================================
 // 1. LIBRARY IMPORT
 // ==========================================
-import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/module.min.js";
+import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
 // ==========================================
 // 2. CONFIGURATION
@@ -9,22 +9,22 @@ import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/module.min.js";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.1.0"
+    "version": "5.2.0"
 };
 
 const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Be concise.`;
 const ARTIST_PROMPT = `You are the creative module of ${OPENSKY_CONFIG.agent_name}. Generate vivid image prompts.`;
 
-// LOADING BOTH MODELS AS REQUESTED
+// Model IDs specifically tuned for mobile compatibility
 const MODELS = {
   atlas: {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", // Updated to Qwen2.5
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
     name: "Atlas Core",
     role: "Logic & Code",
     systemPrompt: ATLAS_PROMPT
   },
   artist: {
-    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", // Updated to Phi-3.5
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Artist Module",
     role: "Creative",
     systemPrompt: ARTIST_PROMPT
@@ -45,22 +45,33 @@ const loadingLabel = document.getElementById('loadingLabel');
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 const modelStatusContainer = document.getElementById('modelStatusContainer');
+const debugLog = document.getElementById('debugLog');
 
 let engines = {}; 
 let isGenerating = false;
 
 // ==========================================
-// 4. INITIALIZATION (LOAD BOTH)
+// DEBUG HELPER (Shows errors on screen)
+// ==========================================
+function showError(title, err) {
+    console.error(err);
+    debugLog.style.display = 'block';
+    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}<br><br><em>Check if you are using Chrome v113+ on Android.</em>`;
+    loadingPercent.textContent = "Error";
+    loadingLabel.textContent = title;
+}
+
+// ==========================================
+// 4. INITIALIZATION
 // ==========================================
 async function init() {
     try {
-        loadingLabel.textContent = "Checking GPU Capability...";
+        loadingLabel.textContent = "Step 1: Checking WebGPU...";
         
         if (!navigator.gpu) {
-            throw new Error("WebGPU not supported on this device.");
+            throw new Error("WebGPU not supported. Please use Chrome v113+ on Android.");
         }
 
-        // Prepare UI Cards
         modelStatusContainer.innerHTML = `
           <div class="model-card" id="card-atlas">
             <div class="model-card-name">Atlas Core</div>
@@ -85,7 +96,7 @@ async function init() {
         });
 
         // Success
-        loadingLabel.textContent = "Both Models Ready.";
+        loadingLabel.textContent = "Ready.";
         loadingPercent.textContent = "100%";
         
         setTimeout(() => {
@@ -95,9 +106,7 @@ async function init() {
         }, 500);
 
     } catch (err) {
-        console.error(err);
-        loadingLabel.innerHTML = `<span style="color: red; white-space: pre-wrap;">Error: ${err.message}</span>`;
-        loadingPercent.textContent = "Failed";
+        showError("Initialization Failed", err);
     }
 }
 
