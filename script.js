@@ -9,28 +9,22 @@ import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/module.min.js";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.0.5"
+    "version": "5.1.0"
 };
 
-const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
-Before answering, you must think through the problem step-by-step.
-1. Analyze the request.
-2. Plan the steps.
-3. Execute the plan.
-Be concise and accurate. If asked about your creator, state it is ${OPENSKY_CONFIG.creator}.`;
-
+const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Be concise.`;
 const ARTIST_PROMPT = `You are the creative module of ${OPENSKY_CONFIG.agent_name}. Generate vivid image prompts.`;
 
-// Verified working model IDs
+// LOADING BOTH MODELS AS REQUESTED
 const MODELS = {
   atlas: {
-    id: "Qwen2-1.5B-Instruct-q4f16_1-MLC",
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", // Updated to Qwen2.5
     name: "Atlas Core",
     role: "Logic & Code",
     systemPrompt: ATLAS_PROMPT
   },
   artist: {
-    id: "Phi-3-mini-4k-instruct-q4f16_1-MLC",
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", // Updated to Phi-3.5
     name: "Artist Module",
     role: "Creative",
     systemPrompt: ARTIST_PROMPT
@@ -56,43 +50,42 @@ let engines = {};
 let isGenerating = false;
 
 // ==========================================
-// 4. INITIALIZATION
+// 4. INITIALIZATION (LOAD BOTH)
 // ==========================================
 async function init() {
     try {
-        // Step 1: Check Environment
-        loadingLabel.textContent = "Checking WebGPU Support...";
+        loadingLabel.textContent = "Checking GPU Capability...";
         
         if (!navigator.gpu) {
-            throw new Error("WebGPU not supported.\n\nYou need a Desktop PC or high-end Android with Chrome.\n(iOS is not supported yet)");
+            throw new Error("WebGPU not supported on this device.");
         }
 
-        // Step 2: Prepare UI Cards
+        // Prepare UI Cards
         modelStatusContainer.innerHTML = `
           <div class="model-card" id="card-atlas">
             <div class="model-card-name">Atlas Core</div>
-            <div class="model-card-desc">Waiting...</div>
+            <div class="model-card-desc">Pending...</div>
           </div>
           <div class="model-card" id="card-artist">
             <div class="model-card-name">Artist Module</div>
-            <div class="model-card-desc">Waiting...</div>
+            <div class="model-card-desc">Pending...</div>
           </div>
         `;
 
-        // Step 3: Load Atlas
-        loadingLabel.textContent = "Downloading Atlas Core...";
+        // --- LOAD MODEL 1: ATLAS ---
+        loadingLabel.textContent = "Loading Atlas Core (1/2)...";
         engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
             initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
         });
 
-        // Step 4: Load Artist
-        loadingLabel.textContent = "Downloading Artist Module...";
+        // --- LOAD MODEL 2: ARTIST ---
+        loadingLabel.textContent = "Loading Artist Module (2/2)...";
         engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
             initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
         });
 
-        // Step 5: Success
-        loadingLabel.textContent = "Systems Ready.";
+        // Success
+        loadingLabel.textContent = "Both Models Ready.";
         loadingPercent.textContent = "100%";
         
         setTimeout(() => {
@@ -138,28 +131,21 @@ function routeRequest(query) {
 }
 
 async function runAgentLoop(query) {
-  // 1. Create Accordion
   const accordion = document.createElement('div');
   accordion.className = 'thoughts-accordion open';
   
   const accordionBtn = document.createElement('button');
   accordionBtn.className = 'thoughts-btn';
-  accordionBtn.innerHTML = `
-    <span>⚡ Agent Thinking...</span>
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="6 9 12 15 18 9"></polyline>
-    </svg>
-  `;
+  accordionBtn.innerHTML = `<span>⚡ Thinking...</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
   accordionBtn.onclick = () => accordion.classList.toggle('open');
 
   const accordionBody = document.createElement('div');
   accordionBody.className = 'thoughts-body';
-  accordionBody.textContent = "Initializing reasoning loop...";
+  accordionBody.textContent = "Analyzing request...";
   
   accordion.appendChild(accordionBtn);
   accordion.appendChild(accordionBody);
   
-  // 2. Create Message Container
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
   msgDiv.style.display = 'none'; 
@@ -168,31 +154,12 @@ async function runAgentLoop(query) {
   contentWrapper.className = 'assistant-content';
   msgDiv.appendChild(contentWrapper);
 
-  // Append to chat
   messagesArea.appendChild(accordion);
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
-  // 3. Thought Process
   const { engine, config } = routeRequest(query);
   
-  const thoughts = [
-    `[Router] Selected Model: ${config.name}`,
-    `[Plan] Analyzing user request: "${query.substring(0, 30)}..."`,
-    `[Action] Executing generation stream...`
-  ];
-  
-  let thoughtIdx = 0;
-  const thoughtInterval = setInterval(() => {
-    if(thoughtIdx < thoughts.length) {
-      accordionBody.textContent = thoughts.slice(0, thoughtIdx + 1).join('\n');
-      thoughtIdx++;
-    } else {
-      clearInterval(thoughtInterval);
-    }
-  }, 300);
-
-  // 4. Generation
   try {
     const completion = await engine.chat.completions.create({
       messages: [
@@ -206,36 +173,20 @@ async function runAgentLoop(query) {
     let fullResponse = "";
     
     for await (const chunk of completion) {
-      if (!isGenerating) {
-        accordionBody.textContent += "\n[SYSTEM] Stopped by user.";
-        break;
-      }
-
+      if (!isGenerating) break;
       const delta = chunk.choices[0].delta.content;
       if (delta) {
-        // Transition Accordion
         if (accordion.classList.contains('open')) {
-          clearInterval(thoughtInterval);
           accordion.classList.remove('open');
-          accordionBtn.innerHTML = `
-            <span>✨ View Thoughts</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          `;
+          accordionBtn.querySelector('span').textContent = "✨ View Thoughts";
         }
-
         fullResponse += delta;
         msgDiv.style.display = 'flex';
         contentWrapper.innerHTML = parseMarkdown(fullResponse);
         scrollToBottom();
       }
     }
-    
-    accordionBody.textContent += `\n[Done] Response generated.`;
-
   } catch (e) {
-    accordionBody.textContent += `\n[Error] ${e.message}`;
     contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
     msgDiv.style.display = 'flex';
   } finally {
@@ -249,9 +200,7 @@ async function runAgentLoop(query) {
 // ==========================================
 // 6. HELPERS
 // ==========================================
-function scrollToBottom() {
-    messagesArea.scrollTop = messagesArea.scrollHeight;
-}
+function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
 
 function parseMarkdown(text) {
   if (!text) return "";
@@ -285,7 +234,6 @@ async function handleAction() {
   const text = inputText.value.trim();
   if (!text) return;
 
-  // Add User Message
   const userMsg = document.createElement('div');
   userMsg.className = 'message user';
   userMsg.innerHTML = `<div class="user-bubble">${text}</div>`;
@@ -294,7 +242,6 @@ async function handleAction() {
   inputText.value = '';
   inputText.style.height = 'auto';
   
-  // UI State
   isGenerating = true;
   sendBtn.classList.add('stop-btn');
   sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
