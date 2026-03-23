@@ -9,34 +9,23 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "6.0.0"
+    "version": "6.1.0" // Optimized for Hardware Limits
 };
 
-// System Prompt with Recursive Planning & Reasoning Loop
+// System Prompt with Recursive Planning
 const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}.
+1. Recursive Planning: State your plan, critique it, and adjust.
+2. Reasoning Loop: Use Thought-Action-Observation format.
+3. State Management: Track progress and obstacles.`;
 
-1. Recursive Planning & Self-Critique: Before taking any action, state your plan. Critique that plan for potential failures, biases, or inefficiencies, and adjust it immediately.
-2. The Reasoning Loop (Thought-Action-Observation): You must operate in a continuous loop for every step:
-   - Thought: Explain the logic behind your next move.
-   - Action: Execute the specific task or tool call.
-   - Observation: Analyze the raw result of that action.
-   - Update: Refine your remaining strategy based on these new findings.
-3. Proactive Execution: Do not ask for permission to proceed between logical steps. If you encounter a minor ambiguity, make a high-probability assumption based on the primary mission and keep moving.
-4. Tool Governance: You are authorized to use all available tools (Browsing, Python, APIs) to fetch real-time data. Never rely on internal knowledge if a tool can verify a fact.
-5. State Management (Scratchpad): Maintain a persistent "State Log" at the end of every response to ensure context retention. This log must track:
-   - Current Progress: What is finished?
-   - Remaining Obstacles: What is blocking you?
-   - Information Gap: What do you still need to find?
-6. Resource Constraints: You have a limit of 5 iterations to complete this mission. If you reach the penultimate step without a solution, pivot to delivering the best possible synthesis of gathered data.
+// Artist Prompt specialized for SVG Generation
+const ARTIST_PROMPT = `You are the Creative Module of ${OPENSKY_CONFIG.agent_name}.
+You are an expert SVG artist.
+When asked to 'draw', 'generate an image', or 'create a picture', you MUST output valid SVG code inside a code block. 
+Create detailed, artistic SVGs.
+If the user uploads an image for reference, apologize that you cannot see it (hardware limit), but generate an SVG based on their text description.`;
 
-IMMEDIATE FIRST STEP: Begin by acknowledging the mission and outlining your initial 3-step plan using the Thought-Action-Observation format.`;
-
-const ARTIST_PROMPT = `You are the Creative Module of ${OPENSKY_CONFIG.agent_name}. 
-When asked to 'draw' or 'generate an image', you MUST output valid SVG code inside a code block. 
-Do not say you cannot create images. Generate SVG code.
-If the user uploads an image, analyze it and describe it, or modify it via SVG if requested.`;
-
-// Models
+// Models selected for Hardware Compatibility (Workgroup 256)
 const MODELS = {
   atlas: {
     id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
@@ -45,9 +34,11 @@ const MODELS = {
     systemPrompt: ATLAS_PROMPT
   },
   artist: {
-    id: "Phi-3.5-vision-instruct-q4f16_1-MLC", // Multimodal model
+    // Using Phi-3.5-mini as the Artist. It is smart enough to generate SVG code (images)
+    // without crashing the GPU like the Vision model did.
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
     name: "Artist Module",
-    role: "Creative & Vision",
+    role: "Creative (SVG)",
     systemPrompt: ARTIST_PROMPT
   }
 };
@@ -81,7 +72,7 @@ let currentImageBase64 = null;
 function showError(title, err) {
     console.error(err);
     debugLog.style.display = 'block';
-    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}<br><br><em>Check console for details.</em>`;
+    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}<br><br><em>Check if you are using Chrome v113+.</em>`;
     loadingPercent.textContent = "Error";
     loadingLabel.textContent = title;
 }
@@ -148,20 +139,24 @@ function updateModelUI(cardId, report, basePercent) {
 // ==========================================
 function routeRequest(query, hasImage) {
   const q = query.toLowerCase();
-  // If image is uploaded, we MUST use the Artist (Vision) model
+  
+  // If user wants to create/draw -> Use Artist (SVG Generation)
+  if (["image", "draw", "picture", "art", "paint", "svg", "generate"].some(k => q.includes(k))) {
+    return { engine: engines.artist, config: MODELS.artist };
+  }
+  
+  // If user uploaded an image -> Use Artist (Creative transformation)
+  // Note: The model cannot 'see' the image, but we route it here so it can 
+  // generate a 'replacement' SVG based on the user's text description.
   if (hasImage) {
-    return { engine: engines.artist, config: MODELS.artist, isCreative: true };
+    return { engine: engines.artist, config: MODELS.artist };
   }
-  // If specific art keywords, use Artist
-  if (["image", "draw", "picture", "art", "paint", "svg"].some(k => q.includes(k))) {
-    return { engine: engines.artist, config: MODELS.artist, isCreative: true };
-  }
-  // Default to Atlas for Logic/Reasoning
-  return { engine: engines.atlas, config: MODELS.atlas, isCreative: false };
+
+  // Default to Atlas for Logic
+  return { engine: engines.atlas, config: MODELS.atlas };
 }
 
 async function runAgentLoop(query) {
-  // Create Reasoning Accordion (Visible immediately)
   const accordion = document.createElement('div');
   accordion.className = 'reasoning-accordion open';
   
@@ -177,10 +172,9 @@ async function runAgentLoop(query) {
   accordion.appendChild(accordionBtn);
   accordion.appendChild(accordionBody);
   
-  // Create Message Container
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
-  msgDiv.style.display = 'none'; // Hidden until text arrives
+  msgDiv.style.display = 'none'; 
 
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'assistant-content';
@@ -190,7 +184,7 @@ async function runAgentLoop(query) {
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
-  const { engine, config, isCreative } = routeRequest(query, !!currentImageBase64);
+  const { engine, config } = routeRequest(query, !!currentImageBase64);
   
   try {
     // Prepare messages
@@ -198,13 +192,14 @@ async function runAgentLoop(query) {
       { role: "system", content: config.systemPrompt }
     ];
 
+    // Handle Image Upload Context
     if (currentImageBase64) {
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: query },
-          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${currentImageBase64}` } }
-        ]
+      // Since the model is Text-Only (to fix your crash), we inject a system hint
+      // to inform the model about the user's intent.
+      messages.push({ 
+        role: "user", 
+        content: `The user uploaded an image (which I cannot see due to hardware constraints) and said: "${query}". 
+        Please generate an SVG image that matches their description or request.` 
       });
     } else {
       messages.push({ role: "user", content: query });
@@ -223,21 +218,16 @@ async function runAgentLoop(query) {
       const delta = chunk.choices[0].delta.content;
       if (delta) {
         fullResponse += delta;
-        
-        // Update UI
-        // Heuristic: If we detect code or text, minimize reasoning to focus on result
         if (accordion.classList.contains('open') && fullResponse.length > 100) {
              accordion.classList.remove('open');
              accordionBtn.querySelector('span').textContent = "✨ View Reasoning Log";
         }
-
         msgDiv.style.display = 'flex';
-        contentWrapper.innerHTML = parseContent(fullResponse, accordionBody); // Pass accordion to update thoughts
+        contentWrapper.innerHTML = parseContent(fullResponse, accordionBody);
         scrollToBottom();
       }
     }
     
-    // Final cleanup
     accordionBody.textContent = "Reasoning complete.";
     
   } catch (e) {
@@ -246,7 +236,7 @@ async function runAgentLoop(query) {
   } finally {
     isGenerating = false;
     sendBtn.classList.remove('stop-btn');
-    sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+    sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
   }
 }
 
@@ -258,26 +248,11 @@ function parseContent(text, accordionElement) {
   
   let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // Detect Logic/Thoughts and move to accordion if present
-  // Look for keywords like "Thought:", "Plan:", "Action:"
-  const thoughtPatterns = [
-    /Thought:([\s\S]*?)(Action:|Observation:|Update:|$)/gi,
-    /Plan:([\s\S]*?)(Critique:|Action:|$)/gi
-  ];
-
-  // Simple heuristic: if it looks like reasoning text, put it in accordion
-  // This is a simplified parser for the demo.
-  if(accordionElement) {
-      // Just dump the raw text into reasoning for now if it matches patterns
-      // In a real app, you'd parse the specific "Thought" blocks out.
-      // But since we want the main bubble to be clean, we try to separate code/prose.
-  }
-
   // Handle Code Blocks (and SVG)
   escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
       const decodedCode = code.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
       
-      // SVG Detection
+      // SVG Detection -> Render as Image
       if (lang === 'svg' || decodedCode.trim().startsWith('<svg')) {
           return `
             <div class="generated-image-container">
@@ -382,7 +357,7 @@ async function handleAction() {
   sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
   
   scrollToBottom();
-  await runAgentLoop(text || "Analyze this image");
+  await runAgentLoop(text || "Create an artistic representation of this.");
   
   currentImageBase64 = null;
   imagePreviewContainer.classList.remove('active');
