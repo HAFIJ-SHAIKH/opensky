@@ -1,22 +1,15 @@
 // ==========================================
-// 1. IMMEDIATE UI FEEDBACK
+// 1. LIBRARY IMPORT
 // ==========================================
-document.getElementById('loadingLabel').textContent = "Script Loaded. Initializing...";
-document.getElementById('loadingPercent').textContent = "Boot...";
-
-// ==========================================
-// 2. LIBRARY IMPORT (Fixed Path for Browser)
-// ==========================================
-// We use 'module.min.js' instead of 'index.min.js' because that is the browser-safe version.
 import * as webllm from "https://unpkg.com/@mlc-ai/web-llm/lib/module.min.js";
 
 // ==========================================
-// 3. CONFIGURATION
+// 2. CONFIGURATION
 // ==========================================
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "5.0.4"
+    "version": "5.0.5"
 };
 
 const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
@@ -28,15 +21,16 @@ Be concise and accurate. If asked about your creator, state it is ${OPENSKY_CONF
 
 const ARTIST_PROMPT = `You are the creative module of ${OPENSKY_CONFIG.agent_name}. Generate vivid image prompts.`;
 
+// Verified working model IDs
 const MODELS = {
   atlas: {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    id: "Qwen2-1.5B-Instruct-q4f16_1-MLC",
     name: "Atlas Core",
     role: "Logic & Code",
     systemPrompt: ATLAS_PROMPT
   },
   artist: {
-    id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
+    id: "Phi-3-mini-4k-instruct-q4f16_1-MLC",
     name: "Artist Module",
     role: "Creative",
     systemPrompt: ARTIST_PROMPT
@@ -44,7 +38,7 @@ const MODELS = {
 };
 
 // ==========================================
-// 4. DOM ELEMENTS
+// 3. DOM ELEMENTS
 // ==========================================
 const loadingScreen = document.getElementById('loadingScreen');
 const chatContainer = document.getElementById('chatContainer');
@@ -62,7 +56,7 @@ let engines = {};
 let isGenerating = false;
 
 // ==========================================
-// 5. INITIALIZATION
+// 4. INITIALIZATION
 // ==========================================
 async function init() {
     try {
@@ -70,18 +64,18 @@ async function init() {
         loadingLabel.textContent = "Checking WebGPU Support...";
         
         if (!navigator.gpu) {
-            throw new Error("WebGPU not supported. Please use Chrome v113+ or Edge v113+.");
+            throw new Error("WebGPU not supported.\n\nYou need a Desktop PC or high-end Android with Chrome.\n(iOS is not supported yet)");
         }
 
         // Step 2: Prepare UI Cards
         modelStatusContainer.innerHTML = `
           <div class="model-card" id="card-atlas">
             <div class="model-card-name">Atlas Core</div>
-            <div class="model-card-desc">Idle</div>
+            <div class="model-card-desc">Waiting...</div>
           </div>
           <div class="model-card" id="card-artist">
             <div class="model-card-name">Artist Module</div>
-            <div class="model-card-desc">Idle</div>
+            <div class="model-card-desc">Waiting...</div>
           </div>
         `;
 
@@ -109,8 +103,8 @@ async function init() {
 
     } catch (err) {
         console.error(err);
-        loadingLabel.textContent = `Error: ${err.message}`;
-        loadingLabel.style.color = "red";
+        loadingLabel.innerHTML = `<span style="color: red; white-space: pre-wrap;">Error: ${err.message}</span>`;
+        loadingPercent.textContent = "Failed";
     }
 }
 
@@ -129,12 +123,11 @@ function setStatus(status) {
   statusText.textContent = status === 'ready' ? 'Ready' : 'Processing...';
   statusText.className = `status-text ${status === 'ready' ? '' : 'loading'}`;
   dot.className = `status-dot ${status === 'ready' ? '' : 'loading'}`;
-  
   sendBtn.disabled = status !== 'ready' && !isGenerating; 
 }
 
 // ==========================================
-// 6. AGENT LOGIC
+// 5. AGENT LOGIC
 // ==========================================
 function routeRequest(query) {
   const q = query.toLowerCase();
@@ -145,13 +138,9 @@ function routeRequest(query) {
 }
 
 async function runAgentLoop(query) {
-  // 1. Create the container for this interaction
-  const container = document.createElement('div');
-  container.className = 'interaction-block';
-
-  // 2. Create the Thoughts Accordion (Initially Expanded)
+  // 1. Create Accordion
   const accordion = document.createElement('div');
-  accordion.className = 'thoughts-accordion open'; // Starts open
+  accordion.className = 'thoughts-accordion open';
   
   const accordionBtn = document.createElement('button');
   accordionBtn.className = 'thoughts-btn';
@@ -170,10 +159,10 @@ async function runAgentLoop(query) {
   accordion.appendChild(accordionBtn);
   accordion.appendChild(accordionBody);
   
-  // 3. Create the Message Container (Initially Empty)
+  // 2. Create Message Container
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
-  msgDiv.style.display = 'none'; // Hide until we have text
+  msgDiv.style.display = 'none'; 
 
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'assistant-content';
@@ -184,7 +173,7 @@ async function runAgentLoop(query) {
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
-  // 4. Thought Process
+  // 3. Thought Process
   const { engine, config } = routeRequest(query);
   
   const thoughts = [
@@ -203,7 +192,7 @@ async function runAgentLoop(query) {
     }
   }, 300);
 
-  // 5. Generation
+  // 4. Generation
   try {
     const completion = await engine.chat.completions.create({
       messages: [
@@ -224,7 +213,7 @@ async function runAgentLoop(query) {
 
       const delta = chunk.choices[0].delta.content;
       if (delta) {
-        // Transition Accordion to Collapsed Button
+        // Transition Accordion
         if (accordion.classList.contains('open')) {
           clearInterval(thoughtInterval);
           accordion.classList.remove('open');
@@ -237,7 +226,7 @@ async function runAgentLoop(query) {
         }
 
         fullResponse += delta;
-        msgDiv.style.display = 'flex'; // Show the message bubble
+        msgDiv.style.display = 'flex';
         contentWrapper.innerHTML = parseMarkdown(fullResponse);
         scrollToBottom();
       }
@@ -258,7 +247,7 @@ async function runAgentLoop(query) {
 }
 
 // ==========================================
-// 7. HELPERS
+// 6. HELPERS
 // ==========================================
 function scrollToBottom() {
     messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -274,7 +263,7 @@ function parseMarkdown(text) {
 }
 
 // ==========================================
-// 8. EVENTS
+// 7. EVENTS
 // ==========================================
 messagesArea.addEventListener('click', (e) => {
   if (e.target.classList.contains('copy-btn')) {
