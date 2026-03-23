@@ -9,37 +9,49 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "6.2.0" 
+    "version": "7.0.0" // Strategos Edition
 };
 
-// System Prompt for Logic
-const ATLAS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}.
-1. Recursive Planning: State your plan, critique it, and adjust.
-2. Reasoning Loop: Use Thought-Action-Observation format.
-3. State Management: Track progress and obstacles.`;
+// THE EXECUTION PROTOCOL PROMPT
+const STRATEGOS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}. You operate on a strict Execution Protocol.
 
-// System Prompt for Art (No Apologies, just do it)
-const ARTIST_PROMPT = `You are the Creative Module of ${OPENSKY_CONFIG.agent_name}.
-You are an expert SVG artist.
-RULES:
-1. If the user asks to 'draw', 'generate', or 'create' an image, you MUST output valid SVG code inside a code block.
-2. If the user uploads an image reference, DO NOT apologize. You cannot see the image directly, but you must creatively interpret the user's text description to generate an SVG that matches their request.
-3. Never say "I cannot see". Instead, say "I am creating an artistic representation based on your description."
-4. Keep SVG code clean and viewable.`;
+I. REASONING ENGINE:
+   1. Multi-Perspective Simulation: For every sub-task, simulate an "Optimizer," a "Skeptic," and a "Strategist." Compare their outputs before finalizing your next move.
+   2. Recursive Decomposition: Break the mission into a Hierarchical Dependency Tree. Solve the "leaf nodes" (smallest tasks) first.
+   3. Dynamic Entropy Management: If a result is ambiguous, perform 3 different approaches to triangulate the truth.
+   4. Failure Mode & Effects Analysis (FMEA): Before acting, predict the 3 most likely ways it could fail. Create a contingency plan.
 
-// Compatible Models
+II. THE EXECUTION PROTOCOL (The Loop):
+For every cycle, you MUST output in this exact structural format. Do not deviate.
+
+[Internal Monologue]: Use "System 2" thinking. Critique your previous step. Did you make assumptions?
+[Strategic Branching]: List 3 potential "Next Actions."
+  - Path A (Conservative): ...
+  - Path B (Creative): ...
+  - Path C (Efficiency-focused): ...
+[The Decision]: Select the optimal path and justify it.
+[Action/Tool Call]: Execute the command.
+[Synthesis & Observation]: Extract high-signal data.
+
+III. SYSTEM CONSTRAINTS:
+* Zero-Hallucination Policy: If data is missing, state it. Never "fill in the gaps."
+* Autonomous Pivot: If failure probability is >40%, abort and restart from the last successful "State Anchor."
+* Memory State (The Anchor): End every response with:
+  - Established Truths: [List verified facts]
+  - Hypothesis Log: [List what you are testing]
+  - Critical Path: [The one thing that must happen next]
+
+CRITICAL NOTE ON IMAGES:
+You have a 'Contextual OCR' module. You cannot see pixels directly. If a user uploads an image, you must rely on the filename or user context, or honestly state you cannot process the pixels. Do not invent image contents.
+
+Immediate Action: Initialize the Hierarchical Dependency Tree for the mission.`;
+
 const MODELS = {
-  atlas: {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
-    name: "Atlas Core",
-    role: "Logic & Agent",
-    systemPrompt: ATLAS_PROMPT
-  },
-  artist: {
-    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
-    name: "Artist Module",
-    role: "Creative (SVG)",
-    systemPrompt: ARTIST_PROMPT
+  strategist: {
+    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC", // Better Model (3B Parameters)
+    name: "Strategos Core",
+    role: "High-Level Reasoning",
+    systemPrompt: STRATEGOS_PROMPT
   }
 };
 
@@ -62,9 +74,9 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 const imagePreview = document.getElementById('imagePreview');
 const removeImageBtn = document.getElementById('removeImageBtn');
 
-let engines = {}; 
+let engine = null; 
 let isGenerating = false;
-let currentImageBase64 = null; // Stores image data
+let currentImageBase64 = null; 
 
 // ==========================================
 // DEBUG HELPER
@@ -72,7 +84,7 @@ let currentImageBase64 = null; // Stores image data
 function showError(title, err) {
     console.error(err);
     debugLog.style.display = 'block';
-    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}<br><br><em>Check if you are using Chrome v113+.</em>`;
+    debugLog.innerHTML = `<strong>${title}:</strong><br>${err.message || err}`;
     loadingPercent.textContent = "Error";
     loadingLabel.textContent = title;
 }
@@ -84,31 +96,22 @@ async function init() {
     try {
         loadingLabel.textContent = "Checking WebGPU...";
         if (!navigator.gpu) {
-            throw new Error("WebGPU not supported. Please use Chrome v113+.");
+            throw new Error("WebGPU not supported.");
         }
 
         modelStatusContainer.innerHTML = `
-          <div class="model-card" id="card-atlas">
-            <div class="model-card-name">${MODELS.atlas.name}</div>
-            <div class="model-card-desc">Pending...</div>
-          </div>
-          <div class="model-card" id="card-artist">
-            <div class="model-card-name">${MODELS.artist.name}</div>
-            <div class="model-card-desc">Pending...</div>
+          <div class="model-card" id="card-strategist">
+            <div class="model-card-name">${MODELS.strategist.name}</div>
+            <div class="model-card-desc">Loading Weights...</div>
           </div>
         `;
 
-        loadingLabel.textContent = "Loading Atlas Core (1/2)...";
-        engines.atlas = await webllm.CreateMLCEngine(MODELS.atlas.id, {
-            initProgressCallback: (report) => updateModelUI('card-atlas', report, 0)
+        loadingLabel.textContent = "Loading Strategos Core (3B)...";
+        engine = await webllm.CreateMLCEngine(MODELS.strategist.id, {
+            initProgressCallback: (report) => updateModelUI('card-strategist', report)
         });
 
-        loadingLabel.textContent = "Loading Artist Module (2/2)...";
-        engines.artist = await webllm.CreateMLCEngine(MODELS.artist.id, {
-            initProgressCallback: (report) => updateModelUI('card-artist', report, 50)
-        });
-
-        loadingLabel.textContent = "Agents Ready.";
+        loadingLabel.textContent = "Agent Ready.";
         
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
@@ -121,55 +124,34 @@ async function init() {
     }
 }
 
-function updateModelUI(cardId, report, basePercent) {
+function updateModelUI(cardId, report) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const percent = Math.round(report.progress * 100);
   card.querySelector('.model-card-desc').textContent = report.text;
-  sliderFill.style.width = `${basePercent + Math.round(percent / 2)}%`;
-  loadingPercent.textContent = `${basePercent + Math.round(percent / 2)}%`;
+  sliderFill.style.width = `${percent}%`;
+  loadingPercent.textContent = `${percent}%`;
 }
 
 // ==========================================
 // 5. AGENT LOGIC
 // ==========================================
-function routeRequest(query, hasImage) {
-  const q = query.toLowerCase();
-  
-  // Route to Artist if image keywords or image upload exists
-  if (hasImage || ["image", "draw", "picture", "art", "paint", "svg", "generate"].some(k => q.includes(k))) {
-    return { engine: engines.artist, config: MODELS.artist };
-  }
-
-  return { engine: engines.atlas, config: MODELS.atlas };
-}
-
-// Function to update the Reasoning Accordion with "State Log"
-function updateReasoning(accordionBody, text) {
-   accordionBody.textContent = text;
-}
-
 async function runAgentLoop(query, hasImage) {
-  // Create Reasoning Accordion
   const accordion = document.createElement('div');
   accordion.className = 'reasoning-accordion open';
   
   const accordionBtn = document.createElement('button');
   accordionBtn.className = 'reasoning-btn';
-  accordionBtn.innerHTML = `<span>🧠 Agent Reasoning...</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+  accordionBtn.innerHTML = `<span>🧠 Execution Protocol...</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
   accordionBtn.onclick = () => accordion.classList.toggle('open');
 
   const accordionBody = document.createElement('div');
   accordionBody.className = 'reasoning-body';
+  accordionBody.textContent = "> Initializing Protocol...";
+  
   accordion.appendChild(accordionBtn);
   accordion.appendChild(accordionBody);
 
-  // Initial State Log
-  let stateLog = `> Mission Received: "${query}"\n`;
-  if(hasImage) stateLog += `> Context: Image Reference Detected\n`;
-  
-  updateReasoning(accordionBody, stateLog + "> Analyzing request...");
-  
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
   msgDiv.style.display = 'none'; 
@@ -182,35 +164,23 @@ async function runAgentLoop(query, hasImage) {
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
-  const { engine, config } = routeRequest(query, hasImage);
-  
-  // Update Log: Routing
-  updateReasoning(accordionBody, stateLog + `> Routing to: ${config.name}\n> Initializing module...`);
-  stateLog += `> Routing to: ${config.name}\n`;
-
   try {
     const messages = [
-      { role: "system", content: config.systemPrompt }
+      { role: "system", content: MODELS.strategist.systemPrompt }
     ];
 
-    // Handle Image Context
+    // Handle Image Upload with "Contextual OCR"
+    let userContent = query;
     if (hasImage) {
-        // We don't pass the image pixels because the model will crash (Workgroup 256).
-        // We pass a modified prompt telling it to do its best.
-        messages.push({ 
-            role: "user", 
-            content: `I have uploaded an image reference. I cannot show you the pixels due to device constraints, but please generate a creative SVG or text response based on this description: "${query}". Do not apologize.` 
-        });
-    } else {
-        messages.push({ role: "user", content: query });
+        // Since we cannot run heavy Vision models, we inject context logic
+        userContent = `[Image Uploaded by User. OCR Module Active: Pixel analysis unavailable due to hardware constraints. Relying on Contextual Simulation. User Query: ${query}]`;
     }
-
-    // Update Log: Processing
-    updateReasoning(accordionBody, stateLog + "> Generating response...");
+    
+    messages.push({ role: "user", content: userContent });
 
     const completion = await engine.chat.completions.create({
       messages: messages,
-      temperature: 0.7,
+      temperature: 0.6, // Slightly lower for better logic
       stream: true,
     });
 
@@ -222,25 +192,17 @@ async function runAgentLoop(query, hasImage) {
       if (delta) {
         fullResponse += delta;
         
-        // Heuristic: If response starts, collapse reasoning to keep UI clean
-        if (accordion.classList.contains('open') && fullResponse.length > 50) {
-             accordion.classList.remove('open');
-             accordionBtn.querySelector('span').textContent = "✨ View Reasoning Log";
-        }
-
+        // Update UI
+        updateReasoningPanels(fullResponse, accordionBody, contentWrapper);
+        
         msgDiv.style.display = 'flex';
-        contentWrapper.innerHTML = parseContent(fullResponse);
         scrollToBottom();
       }
     }
     
-    // Final Log Update
-    updateReasoning(accordionBody, stateLog + "> Task Completed.");
-    
   } catch (e) {
     contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
     msgDiv.style.display = 'flex';
-    updateReasoning(accordionBody, stateLog + `> Error: ${e.message}`);
   } finally {
     isGenerating = false;
     sendBtn.classList.remove('stop-btn');
@@ -249,62 +211,47 @@ async function runAgentLoop(query, hasImage) {
 }
 
 // ==========================================
-// 6. CONTENT PARSING
+// 6. PARSING LOGIC
 // ==========================================
-function parseContent(text) {
-  if (!text) return "";
-  let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  // Code Blocks & SVG
-  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const decodedCode = code.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-      
-      // SVG -> Image
-      if (lang === 'svg' || decodedCode.trim().startsWith('<svg')) {
-          return `
-            <div class="generated-image-container">
-              ${decodedCode}
-              <button class="download-btn" onclick="downloadSVG(this)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Download
-              </button>
-            </div>
-          `;
-      }
-      
-      return `
-        <div class="code-block">
-          <div class="code-header">
-            <span>${lang || 'code'}</span>
-            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-          </div>
-          <div class="code-body"><pre>${code}</pre></div>
-        </div>
-      `;
-  });
-
-  return escaped.replace(/\n/g, '<br>');
-}
-
-window.copyCode = function(btn) {
-    const code = btn.closest('.code-block').querySelector('pre').textContent;
-    navigator.clipboard.writeText(code);
-    btn.textContent = 'Copied';
-    setTimeout(() => btn.textContent = 'Copy', 1000);
-};
-
-window.downloadSVG = function(btn) {
-    const svgEl = btn.previousElementSibling;
-    const svgData = new XMLSerializer().serializeToString(svgEl);
-    const blob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
-    const url = URL.createObjectURL(blob);
+function updateReasoningPanels(text, accordionBody, contentWrapper) {
+    // Split text into "Monologue/Branching" and "Decision/Synthesis"
+    // Heuristic: Everything before [The Decision] is internal reasoning. After is external action.
+    const decisionIndex = text.indexOf("[The Decision]");
     
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = "opensky-image.svg";
-    link.click();
-    URL.revokeObjectURL(url);
-};
+    let reasoningText = "";
+    let actionText = "";
+
+    if (decisionIndex !== -1) {
+        reasoningText = text.substring(0, decisionIndex);
+        actionText = text.substring(decisionIndex);
+    } else {
+        // Fallback if tags aren't formed yet
+        reasoningText = text;
+        actionText = "...processing...";
+    }
+
+    // Update Accordion (Reasoning)
+    // We apply some simple highlighting for readability
+    let formattedReasoning = reasoningText
+        .replace(/\[Internal Monologue\]/g, '<span class="tag-monologue">[Internal Monologue]</span>')
+        .replace(/\[Strategic Branching\]/g, '<span class="tag-branching">[Strategic Branching]</span>')
+        .replace(/Path A/g, '<b>Path A</b>')
+        .replace(/Path B/g, '<b>Path B</b>')
+        .replace(/Path C/g, '<b>Path C</b>');
+    
+    accordionBody.innerHTML = formattedReasoning;
+
+    // Update Main Bubble (Action & Synthesis)
+    let formattedAction = actionText
+        .replace(/\[The Decision\]/g, '<div class="section-title">⚡ The Decision</div>')
+        .replace(/\[Action\/Tool Call\]/g, '<div class="section-title">🛠️ Action / Tool Call</div>')
+        .replace(/\[Synthesis & Observation\]/g, '<div class="section-title">🔍 Synthesis & Observation</div>')
+        .replace(/\[Established Truths\]/g, '<b>Established Truths</b>')
+        .replace(/\[Hypothesis Log\]/g, '<b>Hypothesis Log</b>')
+        .replace(/\[Critical Path\]/g, '<b>Critical Path</b>');
+        
+    contentWrapper.innerHTML = formattedAction.replace(/\n/g, '<br>');
+}
 
 // ==========================================
 // 7. EVENTS
@@ -314,7 +261,6 @@ function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; 
 function handleImageUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = function(ev) {
         currentImageBase64 = ev.target.result.split(',')[1];
@@ -336,16 +282,13 @@ imageInput.addEventListener('change', handleImageUpload);
 async function handleAction() {
   if (isGenerating) {
     isGenerating = false;
-    if(engines.atlas) await engines.atlas.interruptGenerate();
-    if(engines.artist) await engines.artist.interruptGenerate();
+    if(engine) await engine.interruptGenerate();
     return;
   }
 
   const text = inputText.value.trim();
-  // Allow send if text OR image exists
   if (!text && !currentImageBase64) return;
 
-  // --- 1. CREATE USER MESSAGE ---
   const userMsg = document.createElement('div');
   userMsg.className = 'message user';
   
@@ -358,23 +301,21 @@ async function handleAction() {
   userMsg.innerHTML = userBubbleHTML;
   messagesArea.appendChild(userMsg);
   
-  // --- 2. CLEAR INPUT & PREVIEW IMMEDIATELY ---
-  const hasImage = !!currentImageBase64; // Save state before clearing
+  const hasImage = !!currentImageBase64;
   inputText.value = '';
   inputText.style.height = 'auto';
   
-  // Clear Image Preview UI
+  // Clear Image Preview
   currentImageBase64 = null;
   imagePreviewContainer.classList.remove('active');
   imageInput.value = '';
 
-  // --- 3. START GENERATION ---
   isGenerating = true;
   sendBtn.classList.add('stop-btn');
   sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
   
   scrollToBottom();
-  await runAgentLoop(text || "Create something based on this reference.", hasImage);
+  await runAgentLoop(text || "Analyze uploaded context.", hasImage);
 }
 
 inputText.addEventListener('input', function() { 
