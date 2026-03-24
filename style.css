@@ -17,7 +17,6 @@ body { font-family: 'Inter', sans-serif; color: var(--text-main); height: 100dvh
 .loading-screen { position: fixed; inset: 0; background: white; display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s; }
 .loading-screen.hidden { opacity: 0; pointer-events: none; }
 .loader-content { width: 100%; max-width: 400px; padding: 2rem; text-align: center; }
-.logo-container { width: 80px; height: 80px; margin: 0 auto 1.5rem; }
 .loader-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
 .loader-status { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; height: 1.2em; }
 .progress-container { width: 100%; height: 3px; background: #eee; border-radius: 2px; overflow: hidden; margin-bottom: 0.5rem; }
@@ -29,7 +28,7 @@ body { font-family: 'Inter', sans-serif; color: var(--text-main); height: 100dvh
 .model-card-desc { font-size: 0.65rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #debugLog { margin-top: 1rem; color: red; font-size: 0.7rem; font-family: monospace; text-align: left; }
 
-/* App - No Header Layout */
+/* App */
 .app-container { display: none; flex-direction: column; height: 100%; max-width: 800px; margin: 0 auto; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 .app-container.active { display: flex; }
 
@@ -44,7 +43,6 @@ body { font-family: 'Inter', sans-serif; color: var(--text-main); height: 100dvh
 .message.assistant { align-items: flex-start; }
 .assistant-content { background: white; padding: 1rem; border-radius: 16px; max-width: 85%; border: 1px solid var(--border); font-size: 0.9rem; line-height: 1.6; }
 
-/* Agent Status Indicator (New Design) */
 .agent-status { font-size: 0.7rem; color: #888; margin-bottom: 0.25rem; padding-left: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
 .agent-status-dot { width: 6px; height: 6px; background: #000; border-radius: 50%; animation: pulse 1s infinite; }
 @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
@@ -52,14 +50,11 @@ body { font-family: 'Inter', sans-serif; color: var(--text-main); height: 100dvh
 .tool-result { background: #f0f0f0; border-left: 2px solid #000; padding: 0.5rem; margin-top: 0.5rem; font-size: 0.85rem; border-radius: 4px; }
 .tool-result img { max-width: 100%; border-radius: 4px; margin-top: 0.5rem; display: block; }
 
-/* Code & Markdown */
 .code-block { background: #1e293b; border-radius: 6px; margin: 0.5rem 0; overflow: hidden; color: #fff; }
 .code-header { background: #334155; padding: 0.4rem 0.8rem; font-size: 0.7rem; display: flex; justify-content: space-between; align-items: center; }
 .code-body { padding: 0.8rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre; }
 .copy-btn { background: #475569; border: none; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem; cursor: pointer; }
-.chart-container { background: white; padding: 1rem; border-radius: 8px; margin-top: 0.5rem; }
 
-/* Input */
 .input-area { padding: 1rem 1.5rem; background: white; border-top: 1px solid var(--border); padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
 .input-wrapper { display: flex; background: #fafafa; border: 1px solid var(--border); border-radius: 20px; padding: 0.5rem; padding-left: 1rem; align-items: center; }
 .input-wrapper:focus-within { border-color: #000; background: white; }
