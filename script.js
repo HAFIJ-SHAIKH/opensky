@@ -10,20 +10,20 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODELS
+// ROUTER: Fast, handles tools and simple chat
 const ROUTER_CONFIG = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
     name: "Phi-3.5 Mini",
     role: "Router"
 };
 
+// WORKER: Heavy, handles complex reasoning
 const WORKER_CONFIG = {
     id: "Llama-3-8B-Instruct-q4f16_1-MLC",
     name: "Llama-3 8B",
     role: "Worker"
 };
 
-// PROMPTS
 const ROUTER_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 You are a fast, efficient AI assistant.
@@ -163,7 +163,6 @@ async function routerNode(state) {
         }
     }
     
-    // Decision Logic
     if (fullText.includes("[ROUTE_TO_WORKER]")) {
         updateStatus(msgDiv, "⏳ Routing to Worker...");
         return { nextAction: "worker", messages: [new AIMessage(fullText)] };
@@ -257,7 +256,7 @@ async function initGraph() {
 }
 
 // ==========================================
-// 5. INIT (FIXED SEQUENCE)
+// 5. INIT (FIXED)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -267,8 +266,12 @@ function showError(t, e) {
 
 async function init() {
     try {
+        console.log("Script started...");
         loadingLabel.textContent = "Checking WebGPU...";
-        if (!navigator.gpu) throw new Error("WebGPU not supported.");
+        
+        if (!navigator.gpu) {
+            throw new Error("WebGPU not supported. Please use Chrome/Edge.");
+        }
 
         // Prepare UI Cards
         modelStatusContainer.innerHTML = `
@@ -283,7 +286,8 @@ async function init() {
         `;
 
         // 1. Download Router
-        loadingLabel.textContent = `Downloading Router (${ROUTER_CONFIG.name})...`;
+        loadingLabel.textContent = `Step 1: Downloading Router (${ROUTER_CONFIG.name})...`;
+        console.log(`Downloading ${ROUTER_CONFIG.id}...`);
         
         routerEngine = await webllm.CreateMLCEngine(ROUTER_CONFIG.id, {
             initProgressCallback: (report) => {
@@ -297,9 +301,10 @@ async function init() {
         document.getElementById('router-status').textContent = "Ready";
 
         // 2. Download Worker
-        loadingLabel.textContent = `Downloading Worker (${WORKER_CONFIG.name})...`;
-        sliderFill.style.width = "0%"; // Reset bar
+        loadingLabel.textContent = `Step 2: Downloading Worker (${WORKER_CONFIG.name})...`;
+        sliderFill.style.width = "0%";
         loadingPercent.textContent = "0%";
+        console.log(`Downloading ${WORKER_CONFIG.id}...`);
         
         workerEngine = await webllm.CreateMLCEngine(WORKER_CONFIG.id, {
             initProgressCallback: (report) => {
