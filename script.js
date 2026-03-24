@@ -10,16 +10,17 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// ROUTER: Fast, handles tools and simple chat
+// Models Configuration
+// Note: Llama-3-8B is large (approx 5GB-6GB VRAM). 
+// If your device cannot handle it, stick to Phi-3.5 for both or use a smaller worker.
 const ROUTER_CONFIG = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
     name: "Phi-3.5 Mini",
     role: "Router"
 };
 
-// WORKER: Heavy, handles complex reasoning
 const WORKER_CONFIG = {
-    id: "Llama-3-8B-Instruct-q4f16_1-MLC",
+    id: "Llama-3-8B-Instruct-q4f16_1-MLC", // Ensure your device can run this!
     name: "Llama-3 8B",
     role: "Worker"
 };
@@ -67,7 +68,7 @@ let isGenerating = false;
 let currentImageBase64 = null; 
 
 // ==========================================
-// 3. TOOLS
+// 3. TOOLS (FIXED SYNTAX)
 // ==========================================
 const Tools = {
     wiki: async (q) => {
@@ -97,45 +98,54 @@ const Tools = {
     pokemon: async (name) => {
         const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
         const d = await res.json();
-        return { text: `#${d.id} ${d.name.toUpperCase()}`, image: d.sprites?.front_default };
+        return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
     },
     joke: async () => {
         const d = await (await fetch("https://v2.jokeapi.dev/joke/Any?type=single")).json();
         return { text: d.joke };
     },
     advice: async () => {
-        const d = await (await fetch("https://api.adviceslip.com/advice")).text();
-        return { text: JSON.parse(d).slip.advice };
+        const d = JSON.parse(await (await fetch("https://api.adviceslip.com/advice")).text());
+        return { text: d.slip.advice };
     },
     bored: async () => {
         const d = await (await fetch("https://www.boredapi.com/api/activity")).json();
-        return { text: `${d.activity} (${d.type})` };
+        return { text: d.activity };
     },
-    ocr: async (base64) => {
+    ocr: async () => {
+        if(!currentImageBase64) return { text: "No image" };
         try {
-            const result = await Tesseract.recognize(`data:image/jpeg;base64,${base64}`, 'eng');
-            return { text: result.data.text || "No text found." };
-        } catch(e) { return { text: "OCR failed" }; }
+            const res = await Tesseract.recognize(`data:image/jpeg;base64,${currentImageBase64}`, 'eng');
+            return { text: res.data.text || "No text found" };
+        } catch(e) { return { text: "OCR Error" }; }
     }
-};
+}; // <--- FIX: Properly closed the Tools object
 
-function parseToolAction(text) {
-    const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([^\n]+)/i);
-    if (!match) return null;
-    return { name: match[1].toLowerCase(), args: match[2].trim() };
+// ==========================================
+// 4. GRAPH NODES
+// ==========================================
+
+// Helper to create UI elements
+function createMessageUI(title) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant';
+    
+    const panel = document.createElement('div');
+    panel.className = 'agent-panel open';
+    panel.innerHTML = `<div class="agent-header"><span>${title}</span></div><div class="agent-body">Thinking...</div>`;
+    panel.querySelector('.agent-header').onclick = () => panel.classList.toggle('open');
+
+    const content = document.createElement('div');
+    content.className = 'assistant-content';
+
+    msgDiv.appendChild(panel);
+    msgDiv.appendChild(content);
+    messagesArea.appendChild(msgDiv);
+    smartScroll();
+    
+    return { msgDiv, panel, content };
 }
 
-// ==========================================
-// 4. LANGGRAPH DEFINITION
-// ==========================================
-
-const agentState = {
-    messages: { value: (x, y) => x.concat(y), default: () => [] },
-    imageData: { value: (x, y) => y ?? x, default: () => null },
-    nextAction: { value: (x, y) => y, default: () => null }
-};
-
-// NODE: Router (Fast)
 async function routerNode(state) {
     const history = state.messages;
     const messages = [
@@ -143,12 +153,11 @@ async function routerNode(state) {
         ...history.map(m => ({ role: m._getType(), content: m.content }))
     ];
 
-    const msgDiv = createMessageUI("⚡ Router (Phi-3.5)");
-    const content = msgDiv.querySelector('.assistant-content');
+    const { msgDiv, content } = createMessageUI("⚡ Router (Phi-3.5)");
     const body = msgDiv.querySelector('.agent-body');
 
     const stream = await routerEngine.chat.completions.create({
-        messages, temperature: 0.1, stream: true
+        messages, temperature: 0.7, stream: true
     });
 
     let fullText = "";
@@ -164,7 +173,7 @@ async function routerNode(state) {
     }
     
     if (fullText.includes("[ROUTE_TO_WORKER]")) {
-        updateStatus(msgDiv, "⏳ Routing to Worker...");
+        body.textContent += "\n\n-> Routing to Worker...";
         return { nextAction: "worker", messages: [new AIMessage(fullText)] };
     }
     
@@ -174,11 +183,10 @@ async function routerNode(state) {
     return { nextAction: END, messages: [new AIMessage(fullText)] };
 }
 
-// NODE: Worker (Heavy)
 async function workerNode(state) {
     const history = state.messages;
     const cleanHistory = history.map(m => {
-        if (m.content.includes("[ROUTE_TO_WORKER]")) return new HumanMessage("Please handle this complex request.");
+        if (m.content.includes("[ROUTE_TO_WORKER]")) return new HumanMessage("Please handle this complex request now.");
         return m;
     });
 
@@ -187,8 +195,7 @@ async function workerNode(state) {
         ...cleanHistory.map(m => ({ role: m._getType(), content: m.content }))
     ];
 
-    const msgDiv = createMessageUI("🧠 Worker (Llama-3 8B)");
-    const content = msgDiv.querySelector('.assistant-content');
+    const { msgDiv, content } = createMessageUI("🧠 Worker (Llama-3)");
     const body = msgDiv.querySelector('.agent-body');
 
     const stream = await workerEngine.chat.completions.create({
@@ -206,45 +213,58 @@ async function workerNode(state) {
             smartScroll();
         }
     }
+    
     return { nextAction: END, messages: [new AIMessage(fullText)] };
 }
 
-// NODE: Tools
-async function toolNode(state) {
-    const lastMessage = state.messages[state.messages.length - 1];
-    const text = lastMessage.content;
-    const toolCall = parseToolAction(text);
+async function toolsNode(state) {
+    const lastMsg = state.messages[state.messages.length - 1].content;
+    const toolCall = parseToolAction(lastMsg);
     
-    if (!toolCall) return { nextAction: END };
+    const { msgDiv, content } = createMessageUI("🔧 Tools");
+    content.innerHTML = "Executing tool...";
 
-    let result;
-    if (toolCall.name === 'ocr' && state.imageData) {
-        result = await Tools.ocr(state.imageData);
-    } else if (Tools[toolCall.name]) {
-        result = await Tools[toolCall.name](toolCall.args);
-    } else {
-        result = { text: "Unknown tool" };
+    let result = { text: "Tool not found" };
+    if (toolCall) {
+        const { name, args } = toolCall;
+        if (name === 'ocr') result = await Tools.ocr();
+        else if (Tools[name]) result = await Tools[name](args);
     }
 
-    appendToolResult(result);
+    content.innerHTML += `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
+    
     return { 
-        messages: [new HumanMessage(`OBSERVATION: ${result.text}. Now answer.`)],
-        nextAction: "router" 
+        nextAction: "router", 
+        messages: [new HumanMessage(`OBSERVATION: ${JSON.stringify(result.text)}. Now answer.`)] 
     };
+}
+
+function parseToolAction(text) {
+    const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([^\n]+)/i);
+    if (!match) return null;
+    return { name: match[1].toLowerCase(), args: match[2].trim() };
 }
 
 function checkNextAction(state) {
     return state.nextAction || END;
 }
 
-// Build Graph
+// ==========================================
+// 5. GRAPH SETUP
+// ==========================================
 let app;
+
 async function initGraph() {
+    const agentState = {
+        messages: { value: (x, y) => x.concat(y), default: () => [] },
+        nextAction: { value: (x, y) => y ?? x, default: () => null }
+    };
+
     const workflow = new StateGraph({ channels: agentState });
     
     workflow.addNode("router", routerNode);
     workflow.addNode("worker", workerNode);
-    workflow.addNode("tools", toolNode);
+    workflow.addNode("tools", toolsNode);
     
     workflow.setEntryPoint("router");
     
@@ -256,11 +276,11 @@ async function initGraph() {
 }
 
 // ==========================================
-// 5. INIT (FIXED)
+// 6. INIT (FIXED LOGIC)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
-    debugLog.innerHTML = `${t}: ${e.message}`; 
+    debugLog.innerHTML = `<strong>${t}:</strong> ${e.message}`; 
     console.error(e);
 }
 
@@ -273,7 +293,6 @@ async function init() {
             throw new Error("WebGPU not supported. Please use Chrome/Edge.");
         }
 
-        // Prepare UI Cards
         modelStatusContainer.innerHTML = `
           <div class="model-card">
             <div class="model-card-name">${ROUTER_CONFIG.name}</div>
@@ -333,38 +352,6 @@ async function init() {
     }
 }
 
-// ==========================================
-// 6. UI HELPERS & EVENTS
-// ==========================================
-function createMessageUI(statusText) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message assistant';
-    const panel = document.createElement('div');
-    panel.className = 'agent-panel open';
-    panel.innerHTML = `<div class="agent-header"><span>${statusText}</span></div><div class="agent-body"></div>`;
-    panel.querySelector('.agent-header').onclick = () => panel.classList.toggle('open');
-    const content = document.createElement('div');
-    content.className = 'assistant-content';
-    msgDiv.appendChild(panel);
-    msgDiv.appendChild(content);
-    messagesArea.appendChild(msgDiv);
-    return msgDiv;
-}
-
-function appendToolResult(result) {
-    const lastContent = messagesArea.querySelector('.message:last-child .assistant-content');
-    if(lastContent) {
-        let html = `<div class="tool-result"><b>Tool Result:</b> ${result.text}</div>`;
-        if(result.image) html += `<img src="${result.image}" style="max-width:100px; border-radius:4px; margin-top:5px;">`;
-        lastContent.innerHTML += html;
-    }
-}
-
-function updateStatus(msgDiv, text) {
-    const span = msgDiv.querySelector('.agent-header span');
-    if(span) span.textContent = text;
-}
-
 function smartScroll() {
     messagesArea.scrollTop = messagesArea.scrollHeight;
 }
@@ -394,6 +381,7 @@ window.copyCode = (btn) => {
     setTimeout(()=>btn.textContent='Copy', 1000);
 };
 
+// Event Listeners
 uploadBtn.onclick = () => imageInput.click();
 imageInput.onchange = (e) => {
     const file = e.target.files[0];
@@ -443,12 +431,15 @@ async function handleAction() {
     smartScroll();
 
     try {
+        // Use LangGraph streaming
         const stream = await app.stream({ messages: [new HumanMessage(inputWithHint)], imageData: imageForGraph });
         for await (const event of stream) {
             if (!isGenerating) break;
+            // The nodes handle their own UI updates
         }
     } catch (e) {
         console.error(e);
+        showError("Chat Error", e);
     } finally {
         isGenerating = false;
         sendBtn.classList.remove('stop-btn');
@@ -460,5 +451,5 @@ inputText.oninput = function() { this.style.height = 'auto'; this.style.height =
 inputText.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAction(); } };
 sendBtn.onclick = handleAction;
 
-// Start the app
+// Start
 init();
