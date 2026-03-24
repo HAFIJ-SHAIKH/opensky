@@ -9,44 +9,49 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "9.0.0" // Dual-Core Router Edition
+    "version": "9.5.0" // Memory & Smart Scroll Edition
 };
 
-// --- THE SMALL LLM AGENT (ROUTER) ---
-// This prompt is designed for a very small model (0.5B)
+// --- MEMORY MANAGEMENT ---
+// We keep a log of conversations to give the agent context
+const conversationHistory = [];
+const MAX_HISTORY = 10; // Remember last 10 turns (user + assistant pairs roughly)
+
+function addToHistory(role, content) {
+    conversationHistory.push({ role, content });
+    // Keep history size manageable
+    if (conversationHistory.length > MAX_HISTORY * 2) {
+        conversationHistory.shift(); // Remove oldest
+    }
+}
+
+// --- PROMPTS ---
 const ROUTER_PROMPT = `You are a Router. Classify the user input.
 If the input is a greeting (hi, hello), casual chat, or simple question, reply: CHAT
 If the input is a task, code request, math, complex analysis, or planning, reply: TASK
 Reply with ONLY one word.`;
 
-// --- THE MAIN EXECUTOR PROMPTS ---
-// Used if Router says "CHAT"
-const CHAT_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}. You are concise and friendly. Answer the user directly. Do not use headers or complex formatting.`;
+const CHAT_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}. You are concise and friendly. Answer the user directly. You remember previous context.`;
 
-// Used if Router says "TASK"
 const TASK_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an autonomous agent.
 I. THE COGNITIVE GATE: Efficiency Logic.
 II. FULL AUTONOMOUS MODE:
 [Analysis]: Brief breakdown.
-[Execution]: The code or strategy.
+[Execution]: The code or strategy. Use Markdown tables for data.
 [Auto-Resolved]: Issues you fixed.
 [Next Steps]: What happens next.
 III. CONSTRAINTS: No fluff. No apologies.`;
 
 const MODELS = {
-  // Small Model for Routing (Fast, Low Memory)
   router: {
     id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", 
     name: "Router Agent",
-    role: "Classifier",
-    systemPrompt: ROUTER_PROMPT
+    role: "Classifier"
   },
-  // Main Model for Execution (Smart)
   executor: {
     id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
     name: "Executor Core",
-    role: "Logic",
-    systemPrompt: "" // Dynamic
+    role: "Logic"
   }
 };
 
@@ -75,7 +80,7 @@ let isGenerating = false;
 let currentImageBase64 = null; 
 
 // ==========================================
-// DEBUG HELPER
+// 4. INITIALIZATION
 // ==========================================
 function showError(title, err) {
     console.error(err);
@@ -85,9 +90,6 @@ function showError(title, err) {
     loadingLabel.textContent = title;
 }
 
-// ==========================================
-// 4. INITIALIZATION
-// ==========================================
 async function init() {
     try {
         loadingLabel.textContent = "Checking WebGPU...";
@@ -104,13 +106,11 @@ async function init() {
           </div>
         `;
 
-        // 1. Load Router (Small)
         loadingLabel.textContent = "Loading Router (0.5B)...";
         routerEngine = await webllm.CreateMLCEngine(MODELS.router.id, {
             initProgressCallback: (report) => updateModelUI('card-router', report, 0)
         });
 
-        // 2. Load Executor (Main)
         loadingLabel.textContent = "Loading Executor (1.5B)...";
         executorEngine = await webllm.CreateMLCEngine(MODELS.executor.id, {
             initProgressCallback: (report) => updateModelUI('card-executor', report, 50)
@@ -139,63 +139,96 @@ function updateModelUI(cardId, report, basePercent) {
 }
 
 // ==========================================
-// 5. DUAL-CORE LOGIC
+// 5. SMART SCROLL LOGIC
+// ==========================================
+function smartScrollToBottom() {
+    // Check if user is near the bottom (within 100px)
+    const isNearBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 100;
+    
+    if (isNearBottom) {
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+}
+
+// ==========================================
+// 6. DUAL-CORE LOGIC
 // ==========================================
 async function runAgentLoop(query, hasImage) {
+  // Create Message Container
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
 
+  // Create Agent Panel (Always visible)
+  const agentPanel = document.createElement('div');
+  agentPanel.className = 'agent-panel open'; // Start open
+  agentPanel.innerHTML = `
+    <div class="agent-header">
+        <span class="status-text">🧠 Analyzing Input...</span>
+        <svg class="arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+    <div class="agent-body">Routing request...</div>
+  `;
+  // Toggle logic
+  agentPanel.querySelector('.agent-header').onclick = () => agentPanel.classList.toggle('open');
+
+  // Content Wrapper
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'assistant-content';
-  msgDiv.appendChild(contentWrapper);
 
+  msgDiv.appendChild(agentPanel);
+  msgDiv.appendChild(contentWrapper);
   messagesArea.appendChild(msgDiv);
-  scrollToBottom();
+  
+  smartScrollToBottom(); // Initial scroll
+
+  const statusText = agentPanel.querySelector('.status-text');
+  const agentBody = agentPanel.querySelector('.agent-body');
 
   try {
-    // --- STEP 1: ROUTER DECISION ---
-    // We ask the small model to classify
+    // --- STEP 1: ROUTER ---
+    statusText.textContent = "🤔 Classifying Request...";
+    
     const routerMessages = [
       { role: "system", content: ROUTER_PROMPT },
       { role: "user", content: query }
     ];
 
-    // Fast, non-streaming call to Router
     const routerResponse = await routerEngine.chat.completions.create({
       messages: routerMessages,
       temperature: 0.1,
-      max_tokens: 5 // We only need 1 word
+      max_tokens: 5
     });
     
     const decision = routerResponse.choices[0].message.content.trim().toUpperCase();
     const isTask = decision.includes("TASK");
 
-    // --- STEP 2: EXECUTOR ACTION ---
+    // --- STEP 2: PREPARE CONTEXT (MEMORY) ---
+    let systemPrompt = isTask ? TASK_PROMPT : CHAT_PROMPT;
     
-    // UI: Show Routing Decision
-    const badge = document.createElement('div');
-    badge.className = 'routing-badge';
-    badge.textContent = isTask ? "MODE: AUTONOMOUS TASK" : "MODE: CONVERSATION";
-    contentWrapper.appendChild(badge);
-
-    const textDiv = document.createElement('div');
-    contentWrapper.appendChild(textDiv);
-
-    // Select System Prompt based on Router
-    const systemPrompt = isTask ? TASK_PROMPT : CHAT_PROMPT;
-    
+    // Build messages with history
     const executorMessages = [
-      { role: "system", content: systemPrompt }
+      { role: "system", content: systemPrompt },
+      ...conversationHistory // Inject memory
     ];
 
+    // Add current message
     if (hasImage) {
-        // If image, force Task mode logic usually, or handle gracefully
         executorMessages.push({ 
             role: "user", 
             content: `[Image Context] ${query}` 
         });
     } else {
         executorMessages.push({ role: "user", content: query });
+    }
+
+    // --- STEP 3: EXECUTE ---
+    if (isTask) {
+        statusText.textContent = "⚡ MODE: AUTONOMOUS TASK";
+        statusText.classList.add('task-badge'); // Optional styling hook
+        agentBody.textContent = "Analyzing task requirements...";
+    } else {
+        statusText.textContent = "💬 MODE: CONVERSATION";
+        agentBody.textContent = "No complex task detected. Engaging conversation mode.";
     }
 
     const completion = await executorEngine.chat.completions.create({
@@ -211,18 +244,26 @@ async function runAgentLoop(query, hasImage) {
       const delta = chunk.choices[0].delta.content;
       if (delta) {
         fullResponse += delta;
-        // Use existing parsing logic
+        
+        // Update UI based on mode
         if (isTask) {
-            parseTier2Response(fullResponse, null, textDiv);
+            parseTier2Response(fullResponse, agentBody, contentWrapper);
         } else {
-            parseTier1Response(fullResponse, textDiv);
+            parseTier1Response(fullResponse, contentWrapper);
         }
-        scrollToBottom();
+        
+        smartScrollToBottom(); // Use smart scroll
       }
     }
     
+    // Save to memory
+    addToHistory("user", query);
+    addToHistory("assistant", fullResponse);
+
   } catch (e) {
-    contentWrapper.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
+    contentWrapper.innerHTML += `<span style="color:red; display:block; margin-top:5px;">Error: ${e.message}</span>`;
+    statusText.textContent = "⚠️ Error Occurred";
+    agentBody.textContent = e.message;
   } finally {
     isGenerating = false;
     sendBtn.classList.remove('stop-btn');
@@ -231,17 +272,49 @@ async function runAgentLoop(query, hasImage) {
 }
 
 // ==========================================
-// 6. PARSING LOGIC
+// 7. PARSING LOGIC
 // ==========================================
+
+// Simple Markdown Parser for Charts & Code
+function parseMarkdown(text) {
+    // Escape HTML first
+    let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Code Blocks
+    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<div class="code-block">
+                    <div class="code-header">
+                        <span>${lang || 'code'}</span>
+                        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <div class="code-body"><pre>${code}</pre></div>
+                </div>`;
+    });
+
+    // Tables (Simple Regex for Markdown Tables)
+    // Matches: | col | col |
+    if (html.includes('|')) {
+        const tableRegex = /^\|(.+)\|\s*\n\|[-:\s|]+\|\s*\n((?:\|.+\|\s*\n?)+)/gm;
+        html = html.replace(tableRegex, (match, headerRow, bodyRows) => {
+            const headers = headerRow.split('|').filter(h => h.trim()).map(h => `<th>${h.trim()}</th>`).join('');
+            const rows = bodyRows.trim().split('\n').map(row => {
+                const cells = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
+                return `<tr>${cells}</tr>`;
+            }).join('');
+            return `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+        });
+    }
+
+    // Newlines
+    return html.replace(/\n/g, '<br>');
+}
+
 function parseTier1Response(text, container) {
-  let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      return `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`;
-  });
-  container.innerHTML = escaped.replace(/\n/g, '<br>');
+    container.innerHTML = parseMarkdown(text);
 }
 
 function parseTier2Response(text, accordionBody, textContainer) {
+    // Split logic: Analysis -> Accordion, Execution -> Main
     const parts = { analysis: "", execution: "", resolved: "", next: "" };
     const analysisMatch = text.match(/\[Analysis\]:?([\s\S]*?)(?=\[Execution\]|\[Auto-Resolved\]|\[Next Steps\]|$)/i);
     const executionMatch = text.match(/\[Execution\]:?([\s\S]*?)(?=\[Auto-Resolved\]|\[Next Steps\]|$)/i);
@@ -253,42 +326,38 @@ function parseTier2Response(text, accordionBody, textContainer) {
     if (resolvedMatch) parts.resolved = resolvedMatch[1].trim();
     if (nextMatch) parts.next = nextMatch[1].trim();
 
+    // Update Accordion
+    if (accordionBody) {
+        accordionBody.textContent = parts.analysis || "Processing thoughts...";
+    }
+
+    // Update Main Content
     let mainHTML = "";
     if (parts.execution) {
-        mainHTML += `<span class="tag-header tag-execution">[Execution]</span>`;
-        mainHTML += parseInlineCodeAndText(parts.execution);
+        mainHTML += `<div class="mode-badge task">Execution</div>`;
+        mainHTML += parseMarkdown(parts.execution);
     }
     if (parts.resolved) {
-        mainHTML += `<span class="tag-header tag-resolved">[Auto-Resolved]</span>`;
-        mainHTML += `<div style="background:#fffbeb; padding:0.5rem; border-radius:4px; margin-bottom:0.5rem; font-size:0.85rem;">${parts.resolved.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</div>`;
+        mainHTML += `<div class="mode-badge" style="background:#fff7ed; color:#ea580c;">Auto-Resolved</div>`;
+        mainHTML += `<div style="background:#fffbeb; padding:0.5rem; border-radius:4px; margin:0.5rem 0; font-size:0.85rem; border-left: 3px solid #f59e0b;">${parts.resolved.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</div>`;
     }
     if (parts.next) {
-        mainHTML += `<span class="tag-header tag-next">[Next Steps]</span>`;
+        mainHTML += `<div class="mode-badge" style="background:#eff6ff; color:#2563eb;">Next Steps</div>`;
         mainHTML += `<div style="color:#3b82f6; font-size:0.85rem;">${parts.next.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</div>`;
     }
 
     textContainer.innerHTML = mainHTML;
 }
 
-function parseInlineCodeAndText(text) {
-  let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      return `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`;
-  });
-  return escaped.replace(/\n/g, '<br>');
-}
-
 // ==========================================
-// 7. EVENTS
+// 8. EVENTS
 // ==========================================
 window.copyCode = function(btn) {
     const code = btn.closest('.code-block').querySelector('pre').textContent;
     navigator.clipboard.writeText(code);
-    btn.textContent = 'Copied';
-    setTimeout(() => btn.textContent = 'Copy', 1000);
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
 };
-
-function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
 
 function handleImageUpload(e) {
     const file = e.target.files[0];
@@ -346,7 +415,7 @@ async function handleAction() {
   sendBtn.classList.add('stop-btn');
   sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
   
-  scrollToBottom();
+  smartScrollToBottom();
   await runAgentLoop(text || "Analyze context.", hasImage);
 }
 
