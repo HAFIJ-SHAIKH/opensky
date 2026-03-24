@@ -3,43 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0d9488">
-  <title>Opensky Agent</title>
+  <meta name="theme-color" content="#4f46e5">
+  <title>Opensky</title>
   
   <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-  <script type="importmap">
-    {
-      "imports": {
-        "@mlc-ai/web-llm": "https://esm.run/@mlc-ai/web-llm",
-        "@langchain/langgraph": "https://esm.run/@langchain/langgraph",
-        "@langchain/core": "https://esm.run/@langchain/core"
-      }
-    }
-  </script>
 </head>
 <body>
 
   <!-- Loading Screen -->
   <div class="loading-screen" id="loadingScreen">
     <div class="loader-content">
-      <div class="logo-mark">
-        <!-- New Abstract Bird/Router Logo -->
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-          <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
-          <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
-          <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
-          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+      <div class="logo-container">
+        <!-- New Paper Plane Logo -->
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>
       </div>
       <h1 class="loader-title">Opensky</h1>
-      <p class="loader-status" id="loadingLabel">Initializing System...</p>
+      <p class="loader-status" id="loadingLabel">Initializing...</p>
       <div class="progress-container">
         <div class="progress-bar" id="sliderFill"></div>
       </div>
@@ -54,12 +40,11 @@
     
     <header class="app-header">
       <div class="app-logo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
         </svg>
         <span>Opensky</span>
       </div>
-      <div class="router-badge" id="statusBadge">Initializing</div>
     </header>
 
     <main class="chat-area" id="messagesArea"></main>
