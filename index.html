@@ -6,9 +6,13 @@
   <meta name="theme-color" content="#000000">
   <title>Opensky</title>
   
+  <!-- Styles -->
   <link rel="stylesheet" href="style.css">
+  
+  <!-- Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
+  <!-- External Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -17,35 +21,48 @@
   <!-- Loading Screen -->
   <div class="loading-screen" id="loadingScreen">
     <div class="loader-content">
+      
+      <!-- Your Custom Energy Vertex Logo -->
       <div class="logo-container">
-        <!-- Minimalist Energy Vertex Spiral Logo -->
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 12c-2-2.67-4-4-6-4s-3.5 2-3.5 4 1.5 4 3.5 4 4-1.33 6-4c2 2.67 4 4 6 4s3.5-2 3.5-4-1.5-4-3.5-4-4 1.33-6 4z" id="spiralPath">
-            <animate attributeName="d" dur="3s" repeatCount="indefinite" 
-              values="M12 12c-2-2.67-4-4-6-4s-3.5 2-3.5 4 1.5 4 3.5 4 4-1.33 6-4c2 2.67 4 4 6 4s3.5-2 3.5-4-1.5-4-3.5-4-4 1.33-6 4z;
-                      M12 12c2-2.67 4-4 6-4s3.5 2 3.5 4-1.5 4-3.5 4-4-1.33-6-4c-2 2.67-4 4-6 4s-3.5-2-3.5-4 1.5-4 3.5-4 4 1.33 6 4z;
-                      M12 12c-2-2.67-4-4-6-4s-3.5 2-3.5 4 1.5 4 3.5 4 4-1.33 6-4c2 2.67 4 4 6 4s3.5-2 3.5-4-1.5-4-3.5-4-4 1.33-6 4z" />
-          </path>
+        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <g transform="translate(100,100)">
+            <path d="M-60,0 A60,30 0 1,1 60,0 A60,60 0 1,1 -60,0" fill="none" stroke="black" stroke-width="1.5" />
+            <path d="M-50,5 A50,25 10 1,1 50,-5 A50,50 0 1,1 -50,5" fill="none" stroke="black" stroke-width="1" opacity="0.8"/>
+            <path d="M-40,10 A40,20 20 1,1 40,-10 A40,40 0 1,1 -40,10" fill="none" stroke="black" stroke-width="0.8" opacity="0.6"/>
+            <path d="M-30,15 A30,15 30 1,1 30,-15 A30,30 0 1,1 -30,15" fill="none" stroke="black" stroke-width="0.5" opacity="0.4"/>
+            <circle cx="0" cy="0" r="4" fill="black" />
+            <circle cx="0" cy="0" r="80" fill="none" stroke="black" stroke-width="0.2" stroke-dasharray="2,4" />
+            <circle cx="0" cy="0" r="95" fill="none" stroke="black" stroke-width="0.1" />
+          </g>
         </svg>
       </div>
+
       <h1 class="loader-title">Opensky</h1>
       <p class="loader-status" id="loadingLabel">Initializing System...</p>
+      
       <div class="progress-container">
         <div class="progress-bar" id="sliderFill"></div>
       </div>
       <div class="progress-stats"><span id="loadingPercent">0%</span></div>
+      
       <div id="modelStatusContainer" class="model-status-container"></div>
-      <div id="debugLog" style="display:none;"></div>
+      
+      <!-- Debug Log visible by default for troubleshooting -->
+      <div id="debugLog" style="display:none; margin-top:15px;"></div>
     </div>
   </div>
 
-  <!-- App Container -->
+  <!-- Main App Container -->
   <div class="app-container" id="chatContainer">
     
     <header class="app-header">
       <div class="app-logo">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 12c-2-2.67-4-4-6-4s-3.5 2-3.5 4 1.5 4 3.5 4 4-1.33 6-4c2 2.67 4 4 6 4s3.5-2 3.5-4-1.5-4-3.5-4-4 1.33-6 4z"></path>
+        <!-- Small Logo for Header -->
+        <svg width="20" height="20" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+           <g transform="translate(100,100)">
+            <path d="M-60,0 A60,30 0 1,1 60,0 A60,60 0 1,1 -60,0" fill="none" stroke="black" stroke-width="12" />
+            <circle cx="0" cy="0" r="20" fill="black" />
+          </g>
         </svg>
         <span>Opensky</span>
       </div>
