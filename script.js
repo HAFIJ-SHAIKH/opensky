@@ -10,20 +10,20 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// ROUTER: Fast, handles tools and simple chat
+// MODELS
 const ROUTER_CONFIG = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
     name: "Phi-3.5 Mini",
     role: "Router"
 };
 
-// WORKER: Heavy, handles complex reasoning
 const WORKER_CONFIG = {
     id: "Llama-3-8B-Instruct-q4f16_1-MLC",
     name: "Llama-3 8B",
     role: "Worker"
 };
 
+// PROMPTS
 const ROUTER_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 You are a fast, efficient AI assistant.
@@ -43,7 +43,7 @@ You are brilliant at coding, math, and creative writing. Be detailed and helpful
 `;
 
 // ==========================================
-// 2. DOM
+// 2. DOM & STATE
 // ==========================================
 const loadingScreen = document.getElementById('loadingScreen');
 const chatContainer = document.getElementById('chatContainer');
@@ -67,7 +67,7 @@ let isGenerating = false;
 let currentImageBase64 = null; 
 
 // ==========================================
-// 3. TOOLS (Restored All)
+// 3. TOOLS
 // ==========================================
 const Tools = {
     wiki: async (q) => {
@@ -178,11 +178,8 @@ async function routerNode(state) {
 // NODE: Worker (Heavy)
 async function workerNode(state) {
     const history = state.messages;
-    // Clean up routing text for the worker
     const cleanHistory = history.map(m => {
-        if (m.content.includes("[ROUTE_TO_WORKER]")) {
-            return new HumanMessage("Please handle this complex request.");
-        }
+        if (m.content.includes("[ROUTE_TO_WORKER]")) return new HumanMessage("Please handle this complex request.");
         return m;
     });
 
@@ -260,7 +257,7 @@ async function initGraph() {
 }
 
 // ==========================================
-// 5. INIT (Fixed Sequential Download)
+// 5. INIT (FIXED SEQUENCE)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -285,21 +282,21 @@ async function init() {
           </div>
         `;
 
-        // 1. Download Router (Mandatory)
+        // 1. Download Router
         loadingLabel.textContent = `Downloading Router (${ROUTER_CONFIG.name})...`;
         
         routerEngine = await webllm.CreateMLCEngine(ROUTER_CONFIG.id, {
             initProgressCallback: (report) => {
-                // EXACT LOGIC FROM YOUR WORKING CODE
                 const p = Math.round(report.progress * 100);
                 sliderFill.style.width = `${p}%`;
                 loadingPercent.textContent = `${p}%`;
-                document.getElementById('router-status').textContent = report.text;
+                const statusEl = document.getElementById('router-status');
+                if(statusEl) statusEl.textContent = report.text;
             }
         });
         document.getElementById('router-status').textContent = "Ready";
 
-        // 2. Download Worker (Immediately After)
+        // 2. Download Worker
         loadingLabel.textContent = `Downloading Worker (${WORKER_CONFIG.name})...`;
         sliderFill.style.width = "0%"; // Reset bar
         loadingPercent.textContent = "0%";
@@ -309,7 +306,8 @@ async function init() {
                 const p = Math.round(report.progress * 100);
                 sliderFill.style.width = `${p}%`;
                 loadingPercent.textContent = `${p}%`;
-                document.getElementById('worker-status').textContent = report.text;
+                const statusEl = document.getElementById('worker-status');
+                if(statusEl) statusEl.textContent = report.text;
             }
         });
         document.getElementById('worker-status').textContent = "Ready";
@@ -457,4 +455,5 @@ inputText.oninput = function() { this.style.height = 'auto'; this.style.height =
 inputText.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAction(); } };
 sendBtn.onclick = handleAction;
 
+// Start the app
 init();
