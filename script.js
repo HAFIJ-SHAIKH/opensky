@@ -20,7 +20,6 @@ const CORE_MODEL = {
     name: "Core",
 };
 
-// PROMPT FOR AGENT (Fast Draft)
 const AGENT_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 You are a fast assistant. Draft a response to the user.
@@ -28,9 +27,6 @@ Use tools if needed: ACTION: tool_name ARGS: value
 Tools: wiki(topic), weather(city), pokemon(name), country(name), define(word), joke(), advice(), bored().
 `;
 
-// PROMPT FOR CORE (Parallel Verification)
-// Note: We inject the Query. We DON'T wait for Agent's draft to keep it parallel.
-// Core generates its own 'Gold Standard' answer.
 const CORE_PROMPT = `
 You are the Core Intelligence of ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 You are reviewing a user request. Generate the best possible answer.
@@ -112,7 +108,7 @@ function parseToolAction(text) {
 }
 
 // ==========================================
-// 4. LOGIC (Parallel Execution)
+// 4. LOGIC
 // ==========================================
 
 function smartScroll() { messagesArea.scrollTop = messagesArea.scrollHeight; }
@@ -136,14 +132,12 @@ function createMessageDiv() {
     return { msgDiv, content, status };
 }
 
-// Main Loop
 async function runAgentLoop(query) {
     const { msgDiv, content, status } = createMessageDiv();
     const statusText = status.querySelector('.status-text');
 
     try {
         // --- 1. AGENT PROCESS (Drafting) ---
-        // Agent Loop handles Tools
         let agentMessages = [
             { role: "system", content: AGENT_PROMPT },
             ...conversationHistory,
@@ -192,77 +186,26 @@ async function runAgentLoop(query) {
         }
 
         // --- 2. CORE PROCESS (Parallel Verification) ---
-        // We run Core in parallel to Agent's final text generation.
-        // Ideally, we start Core slightly before Agent finishes, but for safety:
-        // We start Core verification now.
-        
-        // If tools were used, data is usually accurate, so we can skip Core to save time
         if (!toolUsed) {
             statusText.textContent = "Verifying...";
             
             const coreMessages = [
                 { role: "system", content: CORE_PROMPT },
                 ...conversationHistory,
-                { role: "user", content: query } // Core sees the same query
+                { role: "user", content: query }
             ];
 
-            // Run Core
             const coreCompletion = await coreEngine.chat.completions.create({
                 messages: coreMessages, temperature: 0.5, max_tokens: 1000
             });
 
             const coreText = coreCompletion.choices[0].message.content.trim();
 
-            // --- 3. COMPARISON & SWAP ---
-            
-            // Simple Similarity Check (Naive)
-            // In production, use semantic similarity or an LLM judge prompt.
-            const isSimilar = (a, b) => {
-                const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-                // If 50% of words overlap, consider it "OK" (very naive)
-                // Better: Let Core decide. We modify Core Prompt to output [OK] if good.
-                return a.includes("[OK]") || (a.length > 10 && b.length > 10 && similarity(norm(a), norm(b)) > 0.8);
-            };
-
-            // Heuristic: If Core is significantly different/better?
-            // We use a "Correction" prompt strategy.
-            // Let's assume Core is the 'Truth'.
-            
-            // NOTE: To make this truly robust, Core Prompt should be:
-            // "Compare User Query: {{QUERY}} \n Draft: {{DRAFT}} \n If good output [OK], else output correction."
-            // For this implementation, we run Core INDEPENDENTLY to get a second opinion.
-            
-            // If Core output is VERY similar to Agent, we trust Agent (faster).
-            // If Core output is different, we SWAP to Core (smarter).
-            
-            // Simple heuristic for this demo:
-            // If Core's answer is valid and Agent is very short, use Core.
-            // In a real app, you'd use a 3rd "Judge" or strict prompting.
-            
-            // HERE: We simply compare lengths or trust Core if Agent seemed uncertain? 
-            // Let's assume Agent is "Draft" and Core is "Final".
-            // If the user asked for code, Core is better.
-            
-            // Let's use a simple heuristic: Always show Agent first.
-            // If Core has different content, replace it.
-            
-            // Check if Core thinks it needs correction?
-            // We used a generic prompt for Core above.
-            // Let's swap if Core text is significantly better/longer for complex queries.
-            
-            // FOR THIS DEMO:
-            // We will assume Core has produced the "High Quality" answer.
-            // If Core is ready, we replace Agent text with Core text (DRAFT -> FINAL).
-            // This creates a "Flicker Update" which shows the "Correction" mechanism.
-            
             if (coreText && coreText.length > agentText.length * 0.8) { 
-                // Core provided a solid answer.
-                // Compare content. If different, swap.
                 if (coreText.trim() !== agentText.trim()) {
-                    // SWAP
                     parseAndRender(coreText, content);
                     content.innerHTML += `<div class="corrected-badge">✨ Corrected by Core</div>`;
-                    agentText = coreText; // Save to history
+                    agentText = coreText;
                 } else {
                     content.innerHTML += `<div class="verified-badge">✓ Verified</div>`;
                 }
@@ -283,9 +226,7 @@ async function runAgentLoop(query) {
     }
 }
 
-// Simple similarity helper
 function similarity(s1, s2) {
-    // Very basic Jaccard index for demo
     const set1 = new Set(s1.split(" "));
     const set2 = new Set(s2.split(" "));
     const intersection = [...set1].filter(x => set2.has(x)).length;
@@ -313,7 +254,7 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 6. INITIALIZATION (Sequential Download)
+// 6. INITIALIZATION (Precise Percentage)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -337,24 +278,34 @@ async function init() {
           </div>
         `;
 
-        // 1. Download Agent
+        // 1. Download Agent (0% -> 50%)
         loadingLabel.textContent = `Loading Agent (1/2)...`;
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
             initProgressCallback: (report) => {
-                const p = Math.round(report.progress * 100);
-                sliderFill.style.width = `${p / 2}%`;
+                // FIX: 2 decimal places
+                const p = (report.progress * 100).toFixed(2);
+                
+                // Calculate global progress (Agent is first half)
+                const globalProgress = (report.progress * 50).toFixed(2);
+                
+                sliderFill.style.width = `${globalProgress}%`;
                 loadingPercent.textContent = `${p}%`;
                 document.getElementById('status-agent').textContent = report.text;
             }
         });
         document.getElementById('status-agent').textContent = "Ready";
 
-        // 2. Download Core (Sequential)
+        // 2. Download Core (50% -> 100%)
         loadingLabel.textContent = `Loading Core (2/2)...`;
         coreEngine = await webllm.CreateMLCEngine(CORE_MODEL.id, {
             initProgressCallback: (report) => {
-                const p = Math.round(report.progress * 100);
-                sliderFill.style.width = `${50 + (p / 2)}%`;
+                // FIX: 2 decimal places
+                const p = (report.progress * 100).toFixed(2);
+                
+                // Calculate global progress (Core is second half)
+                const globalProgress = (50 + report.progress * 50).toFixed(2);
+                
+                sliderFill.style.width = `${globalProgress}%`;
                 loadingPercent.textContent = `${p}%`;
                 document.getElementById('status-core').textContent = report.text;
             }
