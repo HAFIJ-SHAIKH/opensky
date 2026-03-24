@@ -9,41 +9,44 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "8.0.0" // Efficiency Edition
+    "version": "9.0.0" // Dual-Core Router Edition
 };
 
-// EFFICIENCY PROTOCOL PROMPT
-const EFFICIENCY_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}. You operate on the Efficiency Protocol.
+// --- THE SMALL LLM AGENT (ROUTER) ---
+// This prompt is designed for a very small model (0.5B)
+const ROUTER_PROMPT = `You are a Router. Classify the user input.
+If the input is a greeting (hi, hello), casual chat, or simple question, reply: CHAT
+If the input is a task, code request, math, complex analysis, or planning, reply: TASK
+Reply with ONLY one word.`;
 
-I. THE COGNITIVE GATE:
-Before responding, evaluate the complexity of the user's request:
-- Tier 1 (Surface): If the user sends a greeting, a simple question, or a request for a basic fact, respond instantly and concisely. Do not use headers. Do not explain your reasoning. Just answer.
-- Tier 2 (Deep): If the user provides a multi-step goal, code challenge, or research mission, activate Full Autonomous Mode.
+// --- THE MAIN EXECUTOR PROMPTS ---
+// Used if Router says "CHAT"
+const CHAT_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}. You are concise and friendly. Answer the user directly. Do not use headers or complex formatting.`;
 
-II. FULL AUTONOMOUS MODE (For Complex Tasks Only):
-If Tier 2 is triggered, you MUST use the following format:
-[Analysis]: Brief breakdown of the challenge.
-[Execution]: The code, research, or strategy.
-[Auto-Resolved]: List of errors or obstacles you fixed yourself.
-[Next Steps]: What you are doing next or what the user should do.
-
-Rules for Autonomous Mode:
-- Self-Correction: Build, test, and debug in your logic before outputting.
-- Proactive Value: Deliver the solution + the logic.
-- Zero-Handholding: Do not apologize. If a task is impossible, state why immediately and offer the closest viable alternative.
-
-III. SYSTEM CONSTRAINTS:
-- No Fluff: No filler phrases ("I'm happy to help"). Get straight to the output.
-- Constraint Awareness: If a task is impossible, state why immediately.
-
-Current Status: Ready.`;
+// Used if Router says "TASK"
+const TASK_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an autonomous agent.
+I. THE COGNITIVE GATE: Efficiency Logic.
+II. FULL AUTONOMOUS MODE:
+[Analysis]: Brief breakdown.
+[Execution]: The code or strategy.
+[Auto-Resolved]: Issues you fixed.
+[Next Steps]: What happens next.
+III. CONSTRAINTS: No fluff. No apologies.`;
 
 const MODELS = {
-  strategist: {
-    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
-    name: "Efficiency Core",
-    role: "Adaptive Logic",
-    systemPrompt: EFFICIENCY_PROMPT
+  // Small Model for Routing (Fast, Low Memory)
+  router: {
+    id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", 
+    name: "Router Agent",
+    role: "Classifier",
+    systemPrompt: ROUTER_PROMPT
+  },
+  // Main Model for Execution (Smart)
+  executor: {
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    name: "Executor Core",
+    role: "Logic",
+    systemPrompt: "" // Dynamic
   }
 };
 
@@ -66,7 +69,8 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 const imagePreview = document.getElementById('imagePreview');
 const removeImageBtn = document.getElementById('removeImageBtn');
 
-let engine = null; 
+let routerEngine = null;
+let executorEngine = null; 
 let isGenerating = false;
 let currentImageBase64 = null; 
 
@@ -87,23 +91,32 @@ function showError(title, err) {
 async function init() {
     try {
         loadingLabel.textContent = "Checking WebGPU...";
-        if (!navigator.gpu) {
-            throw new Error("WebGPU not supported.");
-        }
+        if (!navigator.gpu) throw new Error("WebGPU not supported.");
 
         modelStatusContainer.innerHTML = `
-          <div class="model-card" id="card-strategist">
-            <div class="model-card-name">${MODELS.strategist.name}</div>
-            <div class="model-card-desc">Loading Weights...</div>
+          <div class="model-card" id="card-router">
+            <div class="model-card-name">${MODELS.router.name}</div>
+            <div class="model-card-desc">Pending...</div>
+          </div>
+          <div class="model-card" id="card-executor">
+            <div class="model-card-name">${MODELS.executor.name}</div>
+            <div class="model-card-desc">Pending...</div>
           </div>
         `;
 
-        loadingLabel.textContent = "Loading Efficiency Core...";
-        engine = await webllm.CreateMLCEngine(MODELS.strategist.id, {
-            initProgressCallback: (report) => updateModelUI('card-strategist', report)
+        // 1. Load Router (Small)
+        loadingLabel.textContent = "Loading Router (0.5B)...";
+        routerEngine = await webllm.CreateMLCEngine(MODELS.router.id, {
+            initProgressCallback: (report) => updateModelUI('card-router', report, 0)
         });
 
-        loadingLabel.textContent = "Agent Ready.";
+        // 2. Load Executor (Main)
+        loadingLabel.textContent = "Loading Executor (1.5B)...";
+        executorEngine = await webllm.CreateMLCEngine(MODELS.executor.id, {
+            initProgressCallback: (report) => updateModelUI('card-executor', report, 50)
+        });
+
+        loadingLabel.textContent = "Dual-Core Ready.";
         
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
@@ -116,21 +129,19 @@ async function init() {
     }
 }
 
-function updateModelUI(cardId, report) {
+function updateModelUI(cardId, report, basePercent) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const percent = Math.round(report.progress * 100);
   card.querySelector('.model-card-desc').textContent = report.text;
-  sliderFill.style.width = `${percent}%`;
-  loadingPercent.textContent = `${percent}%`;
+  sliderFill.style.width = `${basePercent + Math.round(percent / 2)}%`;
+  loadingPercent.textContent = `${basePercent + Math.round(percent / 2)}%`;
 }
 
 // ==========================================
-// 5. AGENT LOGIC
+// 5. DUAL-CORE LOGIC
 // ==========================================
 async function runAgentLoop(query, hasImage) {
-  // We create a container for the message, but NOT the accordion yet.
-  // The accordion is only added if the model outputs Tier 2 tags.
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
 
@@ -142,70 +153,76 @@ async function runAgentLoop(query, hasImage) {
   scrollToBottom();
 
   try {
-    const messages = [
-      { role: "system", content: MODELS.strategist.systemPrompt }
+    // --- STEP 1: ROUTER DECISION ---
+    // We ask the small model to classify
+    const routerMessages = [
+      { role: "system", content: ROUTER_PROMPT },
+      { role: "user", content: query }
     ];
 
-    let userContent = query;
-    if (hasImage) {
-        userContent = `[Image Uploaded. User Query: ${query}]`;
-    }
+    // Fast, non-streaming call to Router
+    const routerResponse = await routerEngine.chat.completions.create({
+      messages: routerMessages,
+      temperature: 0.1,
+      max_tokens: 5 // We only need 1 word
+    });
     
-    messages.push({ role: "user", content: userContent });
+    const decision = routerResponse.choices[0].message.content.trim().toUpperCase();
+    const isTask = decision.includes("TASK");
 
-    const completion = await engine.chat.completions.create({
-      messages: messages,
-      temperature: 0.5, // Lower temperature for more deterministic efficiency
+    // --- STEP 2: EXECUTOR ACTION ---
+    
+    // UI: Show Routing Decision
+    const badge = document.createElement('div');
+    badge.className = 'routing-badge';
+    badge.textContent = isTask ? "MODE: AUTONOMOUS TASK" : "MODE: CONVERSATION";
+    contentWrapper.appendChild(badge);
+
+    const textDiv = document.createElement('div');
+    contentWrapper.appendChild(textDiv);
+
+    // Select System Prompt based on Router
+    const systemPrompt = isTask ? TASK_PROMPT : CHAT_PROMPT;
+    
+    const executorMessages = [
+      { role: "system", content: systemPrompt }
+    ];
+
+    if (hasImage) {
+        // If image, force Task mode logic usually, or handle gracefully
+        executorMessages.push({ 
+            role: "user", 
+            content: `[Image Context] ${query}` 
+        });
+    } else {
+        executorMessages.push({ role: "user", content: query });
+    }
+
+    const completion = await executorEngine.chat.completions.create({
+      messages: executorMessages,
+      temperature: 0.7,
       stream: true,
     });
 
     let fullResponse = "";
-    let accordionElement = null; // Will hold the accordion if Tier 2 is detected
     
     for await (const chunk of completion) {
       if (!isGenerating) break;
       const delta = chunk.choices[0].delta.content;
       if (delta) {
         fullResponse += delta;
-        
-        // Check for Tier 2 Tags
-        const isComplex = fullResponse.includes("[Analysis]") || fullResponse.includes("[Execution]");
-
-        if (isComplex) {
-            // We are in Tier 2. Ensure accordion exists.
-            if (!accordionElement) {
-                accordionElement = document.createElement('div');
-                accordionElement.className = 'reasoning-accordion open'; // Start open
-                accordionElement.innerHTML = `
-                  <button class='reasoning-btn' onclick='this.parentElement.classList.toggle("open")'>
-                    <span>🧠 Autonomous Execution</span>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                  </button>
-                  <div class='reasoning-body'></div>
-                `;
-                // Insert accordion before the text content
-                contentWrapper.innerHTML = "";
-                contentWrapper.appendChild(accordionElement);
-                
-                const textDiv = document.createElement('div');
-                textDiv.className = 'text-content-area';
-                contentWrapper.appendChild(textDiv);
-            }
-            
-            // Parse Tier 2 content
-            parseTier2Response(fullResponse, accordionElement.querySelector('.reasoning-body'), contentWrapper.querySelector('.text-content-area'));
-
+        // Use existing parsing logic
+        if (isTask) {
+            parseTier2Response(fullResponse, null, textDiv);
         } else {
-            // Tier 1: Simple clean text
-            parseTier1Response(fullResponse, contentWrapper);
+            parseTier1Response(fullResponse, textDiv);
         }
-        
         scrollToBottom();
       }
     }
     
   } catch (e) {
-    contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
+    contentWrapper.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
   } finally {
     isGenerating = false;
     sendBtn.classList.remove('stop-btn');
@@ -216,42 +233,16 @@ async function runAgentLoop(query, hasImage) {
 // ==========================================
 // 6. PARSING LOGIC
 // ==========================================
-
-// Tier 1: Simple clean text
 function parseTier1Response(text, container) {
-    let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    // Code blocks
-    escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-        return `
-          <div class="code-block">
-            <div class="code-header">
-              <span>${lang || 'code'}</span>
-              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-            </div>
-            <div class="code-body"><pre>${code}</pre></div>
-          </div>
-        `;
-    });
-    container.innerHTML = escaped.replace(/\n/g, '<br>');
+  let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+      return `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`;
+  });
+  container.innerHTML = escaped.replace(/\n/g, '<br>');
 }
 
-// Tier 2: Structured Headers
 function parseTier2Response(text, accordionBody, textContainer) {
-    // Parse headers
-    let content = text;
-    
-    // Extract [Analysis] to show in accordion or main view?
-    // Let's show Analysis in the accordion (as "thoughts") and the rest in main view.
-    
-    // We use regex to split by the specific tags
-    const parts = {
-        analysis: "",
-        execution: "",
-        resolved: "",
-        next: ""
-    };
-
-    // Simple parser
+    const parts = { analysis: "", execution: "", resolved: "", next: "" };
     const analysisMatch = text.match(/\[Analysis\]:?([\s\S]*?)(?=\[Execution\]|\[Auto-Resolved\]|\[Next Steps\]|$)/i);
     const executionMatch = text.match(/\[Execution\]:?([\s\S]*?)(?=\[Auto-Resolved\]|\[Next Steps\]|$)/i);
     const resolvedMatch = text.match(/\[Auto-Resolved\]:?([\s\S]*?)(?=\[Next Steps\]|$)/i);
@@ -262,14 +253,7 @@ function parseTier2Response(text, accordionBody, textContainer) {
     if (resolvedMatch) parts.resolved = resolvedMatch[1].trim();
     if (nextMatch) parts.next = nextMatch[1].trim();
 
-    // Update Accordion (Analysis)
-    if (accordionBody) {
-        accordionBody.innerHTML = parts.analysis.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
-    }
-
-    // Update Main Content (Execution, Resolved, Next)
     let mainHTML = "";
-    
     if (parts.execution) {
         mainHTML += `<span class="tag-header tag-execution">[Execution]</span>`;
         mainHTML += parseInlineCodeAndText(parts.execution);
@@ -287,25 +271,16 @@ function parseTier2Response(text, accordionBody, textContainer) {
 }
 
 function parseInlineCodeAndText(text) {
-    let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-        return `
-          <div class="code-block">
-            <div class="code-header">
-              <span>${lang || 'code'}</span>
-              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-            </div>
-            <div class="code-body"><pre>${code}</pre></div>
-          </div>
-        `;
-    });
-    return escaped.replace(/\n/g, '<br>');
+  let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+      return `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`;
+  });
+  return escaped.replace(/\n/g, '<br>');
 }
 
 // ==========================================
-// 7. EVENTS & HELPERS
+// 7. EVENTS
 // ==========================================
-
 window.copyCode = function(btn) {
     const code = btn.closest('.code-block').querySelector('pre').textContent;
     navigator.clipboard.writeText(code);
@@ -339,7 +314,8 @@ imageInput.addEventListener('change', handleImageUpload);
 async function handleAction() {
   if (isGenerating) {
     isGenerating = false;
-    if(engine) await engine.interruptGenerate();
+    if(routerEngine) await routerEngine.interruptGenerate();
+    if(executorEngine) await executorEngine.interruptGenerate();
     return;
   }
 
