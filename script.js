@@ -8,11 +8,15 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
+// AGENT: Qwen2.5-1.5B (Smart & Light)
+// Uses ~1.5GB VRAM. Fits alongside Llama-3 on 8GB cards.
 const AGENT_MODEL = {
-    id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
+// CORE: Llama-3 8B (Smartest)
+// Uses ~5.5GB VRAM.
 const CORE_MODEL = {
     id: "Llama-3-8B-Instruct-q4f16_1-MLC",
     name: "Core",
@@ -20,15 +24,14 @@ const CORE_MODEL = {
 
 const AGENT_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You are a fast assistant. Draft a response.
-Use tools if needed: ACTION: tool_name ARGS: value
+You are a fast and capable assistant. Write a quick response.
+If you need tools: ACTION: tool_name ARGS: value
 Tools: wiki(topic), weather(city), pokemon(name), country(name), define(word), joke(), advice(), bored().
 `;
 
 const CORE_PROMPT = `
-You are the Core Intelligence of ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You are reviewing a user request. Generate the best possible answer.
-Be accurate and helpful.
+You are the Core Intelligence of ${OPENSKY_CONFIG.agent_name}.
+You verify and correct the draft response. Ensure high quality and accuracy.
 `;
 
 const conversationHistory = [];
@@ -53,59 +56,7 @@ let coreEngine = null;
 let isGenerating = false;
 
 // ==========================================
-// 3. SMOOTH LOADER ANIMATION
-// ==========================================
-const smoothLoader = {
-    targetProgress: 0,
-    currentProgress: 0,
-    animationFrame: null,
-    textElement: null,
-    barElement: null,
-    
-    init(textEl, barEl) {
-        this.textElement = textEl;
-        this.barElement = barEl;
-        this.currentProgress = 0;
-        this.targetProgress = 0;
-        this.animate();
-    },
-    
-    setTarget(val) {
-        this.targetProgress = val;
-    },
-    
-    animate() {
-        // If we haven't reached target, move towards it
-        if (this.currentProgress < this.targetProgress) {
-            // Speed: adjust 0.05 per frame. Adjust this to make it faster/slower
-            // This ensures we don't skip numbers visibly
-            const step = 0.05; 
-            this.currentProgress += step;
-            
-            // Clamp to target if we overshoot
-            if (this.currentProgress > this.targetProgress) {
-                this.currentProgress = this.targetProgress;
-            }
-            
-            this.render();
-        }
-        
-        this.animationFrame = requestAnimationFrame(() => this.animate());
-    },
-    
-    render() {
-        const formatted = this.currentProgress.toFixed(2);
-        this.textElement.textContent = `${formatted}%`;
-        this.barElement.style.width = `${this.currentProgress}%`;
-    },
-    
-    stop() {
-        if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
-    }
-};
-
-// ==========================================
-// 4. TOOLS
+// 3. TOOLS
 // ==========================================
 const Tools = {
     wiki: async (q) => {
@@ -158,7 +109,7 @@ function parseToolAction(text) {
 }
 
 // ==========================================
-// 5. LOGIC
+// 4. LOGIC
 // ==========================================
 
 function smartScroll() { messagesArea.scrollTop = messagesArea.scrollHeight; }
@@ -187,7 +138,7 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // --- AGENT PROCESS ---
+        // --- 1. AGENT PROCESS (Drafting) ---
         let agentMessages = [
             { role: "system", content: AGENT_PROMPT },
             ...conversationHistory,
@@ -235,7 +186,7 @@ async function runAgentLoop(query) {
             }
         }
 
-        // --- CORE PROCESS ---
+        // --- 2. CORE PROCESS (Parallel Verification) ---
         if (!toolUsed) {
             statusText.textContent = "Verifying...";
             
@@ -276,8 +227,16 @@ async function runAgentLoop(query) {
     }
 }
 
+function similarity(s1, s2) {
+    const set1 = new Set(s1.split(" "));
+    const set2 = new Set(s2.split(" "));
+    const intersection = [...set1].filter(x => set2.has(x)).length;
+    const union = new Set([...s1.split(" "), ...s2.split(" ")]).size;
+    return union === 0 ? 1 : intersection / union;
+}
+
 // ==========================================
-// 6. RENDERER
+// 5. RENDERER
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -296,14 +255,11 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 7. INITIALIZATION (Smooth + Error Handling)
+// 6. INITIALIZATION (Precise Percentage)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
-    debugLog.innerHTML = `<strong>${t}:</strong><br>${e.message}`; 
-    // Also show in main label for visibility
-    loadingLabel.textContent = `Error: ${e.message}`;
-    loadingLabel.style.color = "red";
+    debugLog.innerHTML = `${t}: ${e.message}`; 
     console.error(e);
 }
 
@@ -323,57 +279,41 @@ async function init() {
           </div>
         `;
 
-        // Initialize Smooth Loader
-        smoothLoader.init(loadingPercent, sliderFill);
-
         // 1. Download Agent (0% -> 50%)
         loadingLabel.textContent = `Loading Agent (1/2)...`;
-        
-        try {
-            agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
-                initProgressCallback: (report) => {
-                    // Set target for smooth animation (Agent is first 50%)
-                    const globalProgress = report.progress * 50;
-                    smoothLoader.setTarget(globalProgress);
-                    document.getElementById('status-agent').textContent = report.text;
-                }
-            });
-        } catch (e) {
-            throw new Error(`Agent Load Failed: ${e.message}`);
-        }
-        
+        agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
+            initProgressCallback: (report) => {
+                // FIX: 2 decimal places
+                const p = (report.progress * 100).toFixed(2);
+                
+                // Calculate global progress (Agent is first half)
+                const globalProgress = (report.progress * 50).toFixed(2);
+                
+                sliderFill.style.width = `${globalProgress}%`;
+                loadingPercent.textContent = `${p}%`;
+                document.getElementById('status-agent').textContent = report.text;
+            }
+        });
         document.getElementById('status-agent').textContent = "Ready";
-        smoothLoader.setTarget(50); // Ensure we hit exactly 50
 
         // 2. Download Core (50% -> 100%)
         loadingLabel.textContent = `Loading Core (2/2)...`;
-        
-        try {
-            coreEngine = await webllm.CreateMLCEngine(CORE_MODEL.id, {
-                initProgressCallback: (report) => {
-                    // Set target for smooth animation (Core is second 50%)
-                    const globalProgress = 50 + (report.progress * 50);
-                    smoothLoader.setTarget(globalProgress);
-                    document.getElementById('status-core').textContent = report.text;
-                }
-            });
-        } catch (e) {
-            // Handle "Instance reference" error specifically
-            if (e.message.includes("Instance reference") || e.message.includes("memory")) {
-                 throw new Error("Out of Memory (OOM). Try closing other tabs or use a device with more VRAM.");
+        coreEngine = await webllm.CreateMLCEngine(CORE_MODEL.id, {
+            initProgressCallback: (report) => {
+                // FIX: 2 decimal places
+                const p = (report.progress * 100).toFixed(2);
+                
+                // Calculate global progress (Core is second half)
+                const globalProgress = (50 + report.progress * 50).toFixed(2);
+                
+                sliderFill.style.width = `${globalProgress}%`;
+                loadingPercent.textContent = `${p}%`;
+                document.getElementById('status-core').textContent = report.text;
             }
-            throw new Error(`Core Load Failed: ${e.message}`);
-        }
-
+        });
         document.getElementById('status-core').textContent = "Ready";
-        smoothLoader.setTarget(100); // Ensure we hit 100
-        
-        // Stop animation loop
-        smoothLoader.stop();
 
         loadingLabel.textContent = "System Online.";
-        loadingLabel.style.color = "black";
-        
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
             chatContainer.classList.add('active');
@@ -381,13 +321,12 @@ async function init() {
         }, 500);
 
     } catch (e) { 
-        smoothLoader.stop();
         showError("Init Failed", e); 
     }
 }
 
 // ==========================================
-// 8. EVENTS
+// 7. EVENTS
 // ==========================================
 
 async function handleAction() {
