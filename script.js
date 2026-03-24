@@ -8,46 +8,43 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// AGENT: Fast Router (3.8B) - Better than Qwen
+// AGENT: Fast Drafter (3.8B)
 const AGENT_MODEL = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// CORE: Smart Worker (8B)
+// CORE: Smart Corrector (8B)
 const CORE_MODEL = {
     id: "Llama-3-8B-Instruct-q4f16_1-MLC",
     name: "Core",
 };
 
-// PROMPTS
+// PROMPT FOR AGENT (The Drafter)
 const AGENT_PROMPT = `
-You are a Router for ${OPENSKY_CONFIG.agent_name}.
-You are NOT ${OPENSKY_CONFIG.creator}.
-Analyze the user's request.
-
-1. If request is SIMPLE (greetings, basic facts, "what is 2+2", identity questions):
-   Output ONLY: SIMPLE: [your short answer]
-   
-2. If request is COMPLEX (coding, creative writing, deep reasoning):
-   Output ONLY: COMPLEX
-
-3. Identity Rules:
-   - Who are you? -> SIMPLE: I am ${OPENSKY_CONFIG.agent_name}.
-   - Who made you? -> SIMPLE: I was created by ${OPENSKY_CONFIG.creator}.
+You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+You are a fast, efficient assistant.
+Your job is to answer the user's request quickly.
+If you need tools, use: ACTION: tool_name ARGS: value
+Tools: wiki(topic), weather(city), pokemon(name), country(name), joke(), advice(), bored(), define(word).
 `;
 
-const SIMPLE_TASK_PROMPT = `
-You are ${OPENSKY_CONFIG.agent_name} (Fast Version).
-Answer the user's request concisely.
-If you need tools: ACTION: tool_name ARGS: value
-Tools: wiki(topic), weather(city), pokemon(name), country(name).
-`;
-
+// PROMPT FOR CORE (The Corrector)
 const CORE_PROMPT = `
-You are the Advanced Intelligence Core of ${OPENSKY_CONFIG.agent_name}.
-You are created by ${OPENSKY_CONFIG.creator}.
-You handle complex tasks with deep reasoning and detail.
+You are the Core Intelligence Supervisor for ${OPENSKY_CONFIG.agent_name}.
+Your job is to verify the Agent's draft response.
+
+USER REQUEST:
+{{QUERY}}
+
+AGENT DRAFT:
+{{DRAFT}}
+
+RULES:
+1. If the Agent's draft is accurate, helpful, and correct, output ONLY: [OK]
+2. If the draft is wrong, incomplete, or confusing, output the CORRECTED response.
+3. Do NOT repeat the Agent's mistakes.
+4. You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Ensure this identity is preserved.
 `;
 
 const conversationHistory = [];
@@ -70,7 +67,7 @@ const debugLog = document.getElementById('debugLog');
 let agentEngine = null;
 let coreEngine = null;
 let isGenerating = false;
-let coreLoadingPromise = null; // To track background loading
+let coreLoadingPromise = null; 
 
 // ==========================================
 // 3. TOOLS
@@ -126,7 +123,7 @@ function parseToolAction(text) {
 }
 
 // ==========================================
-// 4. LOGIC
+// 4. LOGIC (Parallel Draft & Verify)
 // ==========================================
 
 function smartScroll() {
@@ -157,110 +154,100 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // --- STEP 1: Routing Decision (Fast) ---
-        statusText.textContent = "Analyzing...";
+        // --- PHASE 1: Agent Loop (Drafting) ---
+        statusText.textContent = "Drafting...";
         
-        const routerMessages = [
+        let agentMessages = [
             { role: "system", content: AGENT_PROMPT },
+            ...conversationHistory,
             { role: "user", content: query }
         ];
 
-        // Low temp for strict routing
-        const routerCompletion = await agentEngine.chat.completions.create({
-            messages: routerMessages, temperature: 0.0, max_tokens: 50
-        });
+        let agentText = "";
+        let toolUsed = false;
 
-        const decision = routerCompletion.choices[0].message.content.trim();
-        
-        // --- STEP 2: Execution ---
-
-        // CASE A: Complex Task -> Core
-        if (decision.startsWith("COMPLEX")) {
-            statusText.textContent = "Deep Thinking (Core)...";
-            
-            // Ensure Core is loaded
-            if (!coreEngine && coreLoadingPromise) {
-                statusText.textContent = "Loading Core Model...";
-                await coreLoadingPromise;
-            }
-            
-            if (!coreEngine) throw new Error("Core model failed to load.");
-
-            const coreMessages = [
-                { role: "system", content: CORE_PROMPT },
-                ...conversationHistory,
-                { role: "user", content: query }
-            ];
-
-            const stream = await coreEngine.chat.completions.create({
-                messages: coreMessages, temperature: 0.7, stream: true
+        // Simple loop for Agent
+        let loops = 0;
+        while (loops < 3) {
+            const completion = await agentEngine.chat.completions.create({
+                messages: agentMessages, temperature: 0.7, stream: true
             });
 
-            let fullText = "";
-            for await (const chunk of stream) {
+            let currentChunk = "";
+            for await (const chunk of completion) {
                 if (!isGenerating) break;
                 const delta = chunk.choices[0].delta.content;
                 if (delta) {
-                    fullText += delta;
-                    parseAndRender(fullText, content);
+                    currentChunk += delta;
+                    agentText += delta;
+                    parseAndRender(agentText, content);
                     smartScroll();
                 }
             }
-            
-            conversationHistory.push({ role: "user", content: query });
-            conversationHistory.push({ role: "assistant", content: fullText });
-        } 
-        // CASE B: Simple Task -> Agent handles it
-        else {
-            statusText.textContent = "Processing...";
-            
-            let answerText = decision.replace("SIMPLE:", "").trim();
-            
-            // If router didn't answer, run agent logic
-            if (!answerText || answerText.length < 2) {
-                 const agentMessages = [
-                    { role: "system", content: SIMPLE_TASK_PROMPT },
-                    ...conversationHistory,
-                    { role: "user", content: query }
-                ];
 
-                const completion = await agentEngine.chat.completions.create({
-                    messages: agentMessages, temperature: 0.7, stream: true
-                });
-
-                let currentChunk = "";
-                for await (const chunk of completion) {
-                    if (!isGenerating) break;
-                    const delta = chunk.choices[0].delta.content;
-                    if (delta) {
-                        currentChunk += delta;
-                        parseAndRender(currentChunk, content);
-                        smartScroll();
-                    }
-                }
-                answerText = currentChunk;
-            } else {
-                parseAndRender(answerText, content);
-            }
-
-            // Tool Check
-            const toolCall = parseToolAction(answerText);
+            const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
+                toolUsed = true;
                 statusText.textContent = "Fetching Data...";
                 let toolResult = { text: "Error" };
                 if (Tools[toolCall.name]) toolResult = await Tools[toolCall.name](toolCall.args);
                 
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${toolResult.text}</div>`;
                 if (toolResult.image) resultHtml += `<img src="${toolResult.image}" alt="Image">`;
-                
                 content.innerHTML += resultHtml;
-                answerText += ` [Tool Used]`;
+                
+                agentMessages.push({ role: "assistant", content: currentChunk });
+                agentMessages.push({ role: "user", content: `OBSERVATION: ${JSON.stringify(toolResult.text)}. Now answer.` });
+                agentText = ""; // Reset text for final answer
+                loops++;
+            } else {
+                break; // No tool, done
+            }
+        }
+        
+        // --- PHASE 2: Core Verification (Parallel) ---
+        
+        // If Agent used tools, the output is usually accurate data, so we skip Core verification to save time
+        if (!toolUsed) {
+            statusText.textContent = "Verifying...";
+            
+            // Wait for Core to be ready
+            if (!coreEngine && coreLoadingPromise) {
+                content.innerHTML += `<div style="font-size:0.7em; color:#888; margin-top:5px;">Core model loading...</div>`;
+                await coreLoadingPromise;
             }
 
-            conversationHistory.push({ role: "user", content: query });
-            conversationHistory.push({ role: "assistant", content: answerText });
+            if (coreEngine) {
+                const corePromptText = CORE_PROMPT.replace("{{QUERY}}", query).replace("{{DRAFT}}", agentText);
+                
+                const coreCompletion = await coreEngine.chat.completions.create({
+                    messages: [{ role: "system", content: corePromptText }],
+                    temperature: 0.0, 
+                    max_tokens: 1000
+                });
+
+                const coreText = coreCompletion.choices[0].message.content.trim();
+
+                // Decision Logic
+                if (coreText !== "[OK]") {
+                    // CORRECTION NEEDED
+                    statusText.textContent = "Corrected";
+                    // Replace Agent text with Core text
+                    agentText = coreText;
+                    parseAndRender(agentText, content);
+                    smartScroll();
+                    // Add a subtle badge
+                    content.innerHTML += `<div style="font-size:0.6em; color:#888; margin-top:5px; text-align:right;">✨ Verified & Corrected</div>`;
+                } else {
+                    statusText.textContent = "Verified";
+                    content.innerHTML += `<div style="font-size:0.6em; color:#888; margin-top:5px; text-align:right;">✓ Verified</div>`;
+                }
+            }
         }
 
+        conversationHistory.push({ role: "user", content: query });
+        conversationHistory.push({ role: "assistant", content: agentText });
+        
         status.style.display = 'none';
 
     } catch (e) {
@@ -278,7 +265,7 @@ async function runAgentLoop(query) {
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     
-    // Hide think tags
+    // Hide think tags if any
     html = html.replace(/&lt;think&gt;[\s\S]*?&lt;\/think&gt;/g, '');
     
     // Code
@@ -295,7 +282,7 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 6. INITIALIZATION (Smart Background)
+// 6. INITIALIZATION (Sequential Download)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -331,7 +318,7 @@ async function init() {
         });
         document.getElementById('status-agent').textContent = "Ready";
 
-        // UI is now Interactive!
+        // UI Ready
         loadingLabel.textContent = "Ready. Loading Core in background...";
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
@@ -340,14 +327,11 @@ async function init() {
         }, 500);
 
         // 2. Load Core (Background)
-        // We do NOT await this. We let it happen while user chats.
         coreLoadingPromise = webllm.CreateMLCEngine(CORE_MODEL.id, {
             initProgressCallback: (report) => {
                 const p = Math.round(report.progress * 100);
-                // We don't animate the main bar, but we update the card
-                document.getElementById('status-core').textContent = report.text;
-                // Update the global bar to fill the second half
                 sliderFill.style.width = `${50 + (p / 2)}%`;
+                document.getElementById('status-core').textContent = report.text;
             }
         });
 
