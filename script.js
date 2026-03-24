@@ -8,31 +8,30 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// AGENT: Fast Drafter (3.8B)
+// AGENT: Fast Drafter
 const AGENT_MODEL = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// CORE: Smart Corrector (8B)
+// CORE: Smart Corrector
 const CORE_MODEL = {
     id: "Llama-3-8B-Instruct-q4f16_1-MLC",
     name: "Core",
 };
 
-// PROMPT FOR AGENT (The Drafter)
+// PROMPT FOR AGENT (Drafter)
 const AGENT_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You are a fast, efficient assistant.
-Your job is to answer the user's request quickly.
-If you need tools, use: ACTION: tool_name ARGS: value
+You are a fast assistant. Provide a draft answer to the user.
+If you need tools: ACTION: tool_name ARGS: value
 Tools: wiki(topic), weather(city), pokemon(name), country(name), joke(), advice(), bored(), define(word).
 `;
 
-// PROMPT FOR CORE (The Corrector)
+// PROMPT FOR CORE (Corrector)
 const CORE_PROMPT = `
-You are the Core Intelligence Supervisor for ${OPENSKY_CONFIG.agent_name}.
-Your job is to verify the Agent's draft response.
+You are the Core Supervisor for ${OPENSKY_CONFIG.agent_name}.
+Your job is to verify the Agent's draft.
 
 USER REQUEST:
 {{QUERY}}
@@ -41,10 +40,9 @@ AGENT DRAFT:
 {{DRAFT}}
 
 RULES:
-1. If the Agent's draft is accurate, helpful, and correct, output ONLY: [OK]
-2. If the draft is wrong, incomplete, or confusing, output the CORRECTED response.
-3. Do NOT repeat the Agent's mistakes.
-4. You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. Ensure this identity is preserved.
+1. If the draft is accurate, output ONLY: [OK]
+2. If the draft is wrong or incomplete, output the CORRECTED response.
+3. You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 `;
 
 const conversationHistory = [];
@@ -67,7 +65,7 @@ const debugLog = document.getElementById('debugLog');
 let agentEngine = null;
 let coreEngine = null;
 let isGenerating = false;
-let coreLoadingPromise = null; 
+let isCoreReady = false;
 
 // ==========================================
 // 3. TOOLS
@@ -154,7 +152,7 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // --- PHASE 1: Agent Loop (Drafting) ---
+        // --- PHASE 1: Agent Drafts (Streaming) ---
         statusText.textContent = "Drafting...";
         
         let agentMessages = [
@@ -165,9 +163,9 @@ async function runAgentLoop(query) {
 
         let agentText = "";
         let toolUsed = false;
-
-        // Simple loop for Agent
         let loops = 0;
+
+        // Agent Loop (Tools + Draft)
         while (loops < 3) {
             const completion = await agentEngine.chat.completions.create({
                 messages: agentMessages, temperature: 0.7, stream: true
@@ -188,7 +186,7 @@ async function runAgentLoop(query) {
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
                 toolUsed = true;
-                statusText.textContent = "Fetching Data...";
+                statusText.textContent = "Fetching Tool...";
                 let toolResult = { text: "Error" };
                 if (Tools[toolCall.name]) toolResult = await Tools[toolCall.name](toolCall.args);
                 
@@ -198,57 +196,49 @@ async function runAgentLoop(query) {
                 
                 agentMessages.push({ role: "assistant", content: currentChunk });
                 agentMessages.push({ role: "user", content: `OBSERVATION: ${JSON.stringify(toolResult.text)}. Now answer.` });
-                agentText = ""; // Reset text for final answer
+                agentText = ""; 
                 loops++;
             } else {
-                break; // No tool, done
+                break; 
             }
         }
+
+        // --- PHASE 2: Core Verifies (Parallel Check) ---
         
-        // --- PHASE 2: Core Verification (Parallel) ---
-        
-        // If Agent used tools, the output is usually accurate data, so we skip Core verification to save time
-        if (!toolUsed) {
+        // Only verify if Core is ready AND agent didn't just use a tool (tool results are usually factual)
+        if (isCoreReady && !toolUsed) {
             statusText.textContent = "Verifying...";
             
-            // Wait for Core to be ready
-            if (!coreEngine && coreLoadingPromise) {
-                content.innerHTML += `<div style="font-size:0.7em; color:#888; margin-top:5px;">Core model loading...</div>`;
-                await coreLoadingPromise;
+            const corePromptText = CORE_PROMPT.replace("{{QUERY}}", query).replace("{{DRAFT}}", agentText);
+            
+            // Run Core silently
+            const coreCompletion = await coreEngine.chat.completions.create({
+                messages: [{ role: "system", content: corePromptText }],
+                temperature: 0.0, 
+                max_tokens: 1000
+            });
+
+            const coreText = coreCompletion.choices[0].message.content.trim();
+
+            // Check Result
+            if (coreText !== "[OK]") {
+                // CORRECTION NEEDED
+                statusText.textContent = "Corrected";
+                agentText = coreText; // Swap text
+                parseAndRender(agentText, content);
+                smartScroll();
+                content.innerHTML += `<div style="font-size:0.6em; color:#888; margin-top:5px; text-align:right;">✨ Verified & Corrected</div>`;
+            } else {
+                statusText.textContent = "Verified";
+                content.innerHTML += `<div style="font-size:0.6em; color:#888; margin-top:5px; text-align:right;">✓ Verified</div>`;
             }
-
-            if (coreEngine) {
-                const corePromptText = CORE_PROMPT.replace("{{QUERY}}", query).replace("{{DRAFT}}", agentText);
-                
-                const coreCompletion = await coreEngine.chat.completions.create({
-                    messages: [{ role: "system", content: corePromptText }],
-                    temperature: 0.0, 
-                    max_tokens: 1000
-                });
-
-                const coreText = coreCompletion.choices[0].message.content.trim();
-
-                // Decision Logic
-                if (coreText !== "[OK]") {
-                    // CORRECTION NEEDED
-                    statusText.textContent = "Corrected";
-                    // Replace Agent text with Core text
-                    agentText = coreText;
-                    parseAndRender(agentText, content);
-                    smartScroll();
-                    // Add a subtle badge
-                    content.innerHTML += `<div style="font-size:0.6em; color:#888; margin-top:5px; text-align:right;">✨ Verified & Corrected</div>`;
-                } else {
-                    statusText.textContent = "Verified";
-                    content.innerHTML += `<div style="font-size:0.6em; color:#888; margin-top:5px; text-align:right;">✓ Verified</div>`;
-                }
-            }
+        } else {
+            // If no Core or tool used, just finish
+            status.style.display = 'none';
         }
 
         conversationHistory.push({ role: "user", content: query });
         conversationHistory.push({ role: "assistant", content: agentText });
-        
-        status.style.display = 'none';
 
     } catch (e) {
         content.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
@@ -264,15 +254,10 @@ async function runAgentLoop(query) {
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    
-    // Hide think tags if any
     html = html.replace(/&lt;think&gt;[\s\S]*?&lt;\/think&gt;/g, '');
-    
-    // Code
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
         `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`
     );
-    
     container.innerHTML = html.replace(/\n/g, '<br>');
 }
 
@@ -282,7 +267,7 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 6. INITIALIZATION (Sequential Download)
+// 6. INITIALIZATION (Sequential Download 1 by 1)
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -306,8 +291,8 @@ async function init() {
           </div>
         `;
 
-        // 1. Load Agent (Fast)
-        loadingLabel.textContent = `Loading Agent...`;
+        // 1. Download Agent (0-50%)
+        loadingLabel.textContent = `Loading Agent (1/2)...`;
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
             initProgressCallback: (report) => {
                 const p = Math.round(report.progress * 100);
@@ -318,31 +303,31 @@ async function init() {
         });
         document.getElementById('status-agent').textContent = "Ready";
 
-        // UI Ready
-        loadingLabel.textContent = "Ready. Loading Core in background...";
+        // UI becomes interactive here
+        loadingLabel.textContent = "Agent Ready. Loading Core (2/2)...";
         setTimeout(() => {
             loadingScreen.classList.add('hidden');
             chatContainer.classList.add('active');
             sendBtn.disabled = false;
         }, 500);
 
-        // 2. Load Core (Background)
-        coreLoadingPromise = webllm.CreateMLCEngine(CORE_MODEL.id, {
+        // 2. Download Core (50-100%)
+        // This happens while user can potentially start chatting
+        coreEngine = await webllm.CreateMLCEngine(CORE_MODEL.id, {
             initProgressCallback: (report) => {
                 const p = Math.round(report.progress * 100);
                 sliderFill.style.width = `${50 + (p / 2)}%`;
+                loadingPercent.textContent = `${p}%`;
                 document.getElementById('status-core').textContent = report.text;
             }
         });
-
-        coreLoadingPromise.then(engine => {
-            coreEngine = engine;
-            document.getElementById('status-core').textContent = "Ready";
-            coreLoadingPromise = null;
-        }).catch(err => {
-            document.getElementById('status-core').textContent = "Error";
-            console.error("Core load failed", err);
-        });
+        document.getElementById('status-core').textContent = "Ready";
+        isCoreReady = true;
+        
+        // Update status indicator if user is looking at it
+        if(!loadingScreen.classList.contains('hidden')) {
+            loadingLabel.textContent = "System Fully Online.";
+        }
 
     } catch (e) { 
         showError("Init Failed", e); 
