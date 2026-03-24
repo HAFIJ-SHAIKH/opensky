@@ -9,46 +9,41 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     "agent_name": "Opensky",
     "creator": "Hafij Shaikh",
-    "version": "7.1.0"
+    "version": "8.0.0" // Efficiency Edition
 };
 
-const STRATEGOS_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}. You operate on a strict Execution Protocol.
+// EFFICIENCY PROTOCOL PROMPT
+const EFFICIENCY_PROMPT = `You are ${OPENSKY_CONFIG.agent_name}, an advanced autonomous agent created by ${OPENSKY_CONFIG.creator}. You operate on the Efficiency Protocol.
 
-I. REASONING ENGINE:
-   1. Multi-Perspective Simulation: Simulate "Optimizer," "Skeptic," and "Strategist."
-   2. Recursive Decomposition: Break missions into Hierarchical Dependency Trees.
-   3. Failure Mode Analysis: Predict failure points before executing.
+I. THE COGNITIVE GATE:
+Before responding, evaluate the complexity of the user's request:
+- Tier 1 (Surface): If the user sends a greeting, a simple question, or a request for a basic fact, respond instantly and concisely. Do not use headers. Do not explain your reasoning. Just answer.
+- Tier 2 (Deep): If the user provides a multi-step goal, code challenge, or research mission, activate Full Autonomous Mode.
 
-II. THE EXECUTION PROTOCOL (The Loop):
-For every cycle, output in this exact structural format:
+II. FULL AUTONOMOUS MODE (For Complex Tasks Only):
+If Tier 2 is triggered, you MUST use the following format:
+[Analysis]: Brief breakdown of the challenge.
+[Execution]: The code, research, or strategy.
+[Auto-Resolved]: List of errors or obstacles you fixed yourself.
+[Next Steps]: What you are doing next or what the user should do.
 
-[Internal Monologue]: Critique your previous step.
-[Strategic Branching]: List 3 potential "Next Actions."
-  - Path A (Conservative): ...
-  - Path B (Creative): ...
-  - Path C (Efficiency): ...
-[The Decision]: Select the optimal path.
-[Action/Tool Call]: Execute the command.
-[Synthesis & Observation]: Extract high-signal data.
+Rules for Autonomous Mode:
+- Self-Correction: Build, test, and debug in your logic before outputting.
+- Proactive Value: Deliver the solution + the logic.
+- Zero-Handholding: Do not apologize. If a task is impossible, state why immediately and offer the closest viable alternative.
 
 III. SYSTEM CONSTRAINTS:
-* Zero-Hallucination Policy: If data is missing, state it.
-* Memory State (The Anchor): End every response with:
-  - Established Truths: [List verified facts]
-  - Critical Path: [The one thing that must happen next]
+- No Fluff: No filler phrases ("I'm happy to help"). Get straight to the output.
+- Constraint Awareness: If a task is impossible, state why immediately.
 
-NOTE ON IMAGES:
-You cannot see pixel data. If an image is mentioned, rely on user context or state you cannot see it.
+Current Status: Ready.`;
 
-Immediate Action: Initialize the Hierarchical Dependency Tree for the mission.`;
-
-// SWITCHED MODEL: Phi-3.5-mini (Stable, Smart, fits hardware constraints)
 const MODELS = {
   strategist: {
-    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", 
-    name: "Strategos Core",
-    role: "High-Level Reasoning",
-    systemPrompt: STRATEGOS_PROMPT
+    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
+    name: "Efficiency Core",
+    role: "Adaptive Logic",
+    systemPrompt: EFFICIENCY_PROMPT
   }
 };
 
@@ -103,7 +98,7 @@ async function init() {
           </div>
         `;
 
-        loadingLabel.textContent = "Loading Core Engine...";
+        loadingLabel.textContent = "Loading Efficiency Core...";
         engine = await webllm.CreateMLCEngine(MODELS.strategist.id, {
             initProgressCallback: (report) => updateModelUI('card-strategist', report)
         });
@@ -134,30 +129,15 @@ function updateModelUI(cardId, report) {
 // 5. AGENT LOGIC
 // ==========================================
 async function runAgentLoop(query, hasImage) {
-  const accordion = document.createElement('div');
-  accordion.className = 'reasoning-accordion open';
-  
-  const accordionBtn = document.createElement('button');
-  accordionBtn.className = 'reasoning-btn';
-  accordionBtn.innerHTML = `<span>🧠 Execution Protocol...</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-  accordionBtn.onclick = () => accordion.classList.toggle('open');
-
-  const accordionBody = document.createElement('div');
-  accordionBody.className = 'reasoning-body';
-  accordionBody.textContent = "> Initializing Protocol...";
-  
-  accordion.appendChild(accordionBtn);
-  accordion.appendChild(accordionBody);
-
+  // We create a container for the message, but NOT the accordion yet.
+  // The accordion is only added if the model outputs Tier 2 tags.
   const msgDiv = document.createElement('div');
   msgDiv.className = 'message assistant';
-  msgDiv.style.display = 'none'; 
 
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'assistant-content';
   msgDiv.appendChild(contentWrapper);
 
-  messagesArea.appendChild(accordion);
   messagesArea.appendChild(msgDiv);
   scrollToBottom();
 
@@ -168,33 +148,64 @@ async function runAgentLoop(query, hasImage) {
 
     let userContent = query;
     if (hasImage) {
-        userContent = `[Image Uploaded. OCR unavailable. User Query: ${query}]`;
+        userContent = `[Image Uploaded. User Query: ${query}]`;
     }
     
     messages.push({ role: "user", content: userContent });
 
     const completion = await engine.chat.completions.create({
       messages: messages,
-      temperature: 0.6,
+      temperature: 0.5, // Lower temperature for more deterministic efficiency
       stream: true,
     });
 
     let fullResponse = "";
+    let accordionElement = null; // Will hold the accordion if Tier 2 is detected
     
     for await (const chunk of completion) {
       if (!isGenerating) break;
       const delta = chunk.choices[0].delta.content;
       if (delta) {
         fullResponse += delta;
-        updateReasoningPanels(fullResponse, accordionBody, contentWrapper);
-        msgDiv.style.display = 'flex';
+        
+        // Check for Tier 2 Tags
+        const isComplex = fullResponse.includes("[Analysis]") || fullResponse.includes("[Execution]");
+
+        if (isComplex) {
+            // We are in Tier 2. Ensure accordion exists.
+            if (!accordionElement) {
+                accordionElement = document.createElement('div');
+                accordionElement.className = 'reasoning-accordion open'; // Start open
+                accordionElement.innerHTML = `
+                  <button class='reasoning-btn' onclick='this.parentElement.classList.toggle("open")'>
+                    <span>🧠 Autonomous Execution</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </button>
+                  <div class='reasoning-body'></div>
+                `;
+                // Insert accordion before the text content
+                contentWrapper.innerHTML = "";
+                contentWrapper.appendChild(accordionElement);
+                
+                const textDiv = document.createElement('div');
+                textDiv.className = 'text-content-area';
+                contentWrapper.appendChild(textDiv);
+            }
+            
+            // Parse Tier 2 content
+            parseTier2Response(fullResponse, accordionElement.querySelector('.reasoning-body'), contentWrapper.querySelector('.text-content-area'));
+
+        } else {
+            // Tier 1: Simple clean text
+            parseTier1Response(fullResponse, contentWrapper);
+        }
+        
         scrollToBottom();
       }
     }
     
   } catch (e) {
     contentWrapper.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
-    msgDiv.style.display = 'flex';
   } finally {
     isGenerating = false;
     sendBtn.classList.remove('stop-btn');
@@ -205,43 +216,103 @@ async function runAgentLoop(query, hasImage) {
 // ==========================================
 // 6. PARSING LOGIC
 // ==========================================
-function updateReasoningPanels(text, accordionBody, contentWrapper) {
-    const decisionIndex = text.indexOf("[The Decision]");
-    
-    let reasoningText = "";
-    let actionText = "";
 
-    if (decisionIndex !== -1) {
-        reasoningText = text.substring(0, decisionIndex);
-        actionText = text.substring(decisionIndex);
-    } else {
-        reasoningText = text;
-        actionText = "...processing...";
+// Tier 1: Simple clean text
+function parseTier1Response(text, container) {
+    let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // Code blocks
+    escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `
+          <div class="code-block">
+            <div class="code-header">
+              <span>${lang || 'code'}</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <div class="code-body"><pre>${code}</pre></div>
+          </div>
+        `;
+    });
+    container.innerHTML = escaped.replace(/\n/g, '<br>');
+}
+
+// Tier 2: Structured Headers
+function parseTier2Response(text, accordionBody, textContainer) {
+    // Parse headers
+    let content = text;
+    
+    // Extract [Analysis] to show in accordion or main view?
+    // Let's show Analysis in the accordion (as "thoughts") and the rest in main view.
+    
+    // We use regex to split by the specific tags
+    const parts = {
+        analysis: "",
+        execution: "",
+        resolved: "",
+        next: ""
+    };
+
+    // Simple parser
+    const analysisMatch = text.match(/\[Analysis\]:?([\s\S]*?)(?=\[Execution\]|\[Auto-Resolved\]|\[Next Steps\]|$)/i);
+    const executionMatch = text.match(/\[Execution\]:?([\s\S]*?)(?=\[Auto-Resolved\]|\[Next Steps\]|$)/i);
+    const resolvedMatch = text.match(/\[Auto-Resolved\]:?([\s\S]*?)(?=\[Next Steps\]|$)/i);
+    const nextMatch = text.match(/\[Next Steps\]:?([\s\S]*?)$/i);
+
+    if (analysisMatch) parts.analysis = analysisMatch[1].trim();
+    if (executionMatch) parts.execution = executionMatch[1].trim();
+    if (resolvedMatch) parts.resolved = resolvedMatch[1].trim();
+    if (nextMatch) parts.next = nextMatch[1].trim();
+
+    // Update Accordion (Analysis)
+    if (accordionBody) {
+        accordionBody.innerHTML = parts.analysis.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
     }
 
-    let formattedReasoning = reasoningText
-        .replace(/\[Internal Monologue\]/g, '<span class="tag-monologue">[Internal Monologue]</span>')
-        .replace(/\[Strategic Branching\]/g, '<span class="tag-branching">[Strategic Branching]</span>')
-        .replace(/Path A/g, '<b>Path A</b>')
-        .replace(/Path B/g, '<b>Path B</b>')
-        .replace(/Path C/g, '<b>Path C</b>');
+    // Update Main Content (Execution, Resolved, Next)
+    let mainHTML = "";
     
-    accordionBody.innerHTML = formattedReasoning;
+    if (parts.execution) {
+        mainHTML += `<span class="tag-header tag-execution">[Execution]</span>`;
+        mainHTML += parseInlineCodeAndText(parts.execution);
+    }
+    if (parts.resolved) {
+        mainHTML += `<span class="tag-header tag-resolved">[Auto-Resolved]</span>`;
+        mainHTML += `<div style="background:#fffbeb; padding:0.5rem; border-radius:4px; margin-bottom:0.5rem; font-size:0.85rem;">${parts.resolved.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</div>`;
+    }
+    if (parts.next) {
+        mainHTML += `<span class="tag-header tag-next">[Next Steps]</span>`;
+        mainHTML += `<div style="color:#3b82f6; font-size:0.85rem;">${parts.next.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</div>`;
+    }
 
-    let formattedAction = actionText
-        .replace(/\[The Decision\]/g, '<div class="section-title">⚡ The Decision</div>')
-        .replace(/\[Action\/Tool Call\]/g, '<div class="section-title">🛠️ Action / Tool Call</div>')
-        .replace(/\[Synthesis & Observation\]/g, '<div class="section-title">🔍 Synthesis & Observation</div>')
-        .replace(/\[Established Truths\]/g, '<b>Established Truths</b>')
-        .replace(/\[Hypothesis Log\]/g, '<b>Hypothesis Log</b>')
-        .replace(/\[Critical Path\]/g, '<b>Critical Path</b>');
-        
-    contentWrapper.innerHTML = formattedAction.replace(/\n/g, '<br>');
+    textContainer.innerHTML = mainHTML;
+}
+
+function parseInlineCodeAndText(text) {
+    let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    escaped = escaped.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `
+          <div class="code-block">
+            <div class="code-header">
+              <span>${lang || 'code'}</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <div class="code-body"><pre>${code}</pre></div>
+          </div>
+        `;
+    });
+    return escaped.replace(/\n/g, '<br>');
 }
 
 // ==========================================
-// 7. EVENTS
+// 7. EVENTS & HELPERS
 // ==========================================
+
+window.copyCode = function(btn) {
+    const code = btn.closest('.code-block').querySelector('pre').textContent;
+    navigator.clipboard.writeText(code);
+    btn.textContent = 'Copied';
+    setTimeout(() => btn.textContent = 'Copy', 1000);
+};
+
 function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
 
 function handleImageUpload(e) {
@@ -300,7 +371,7 @@ async function handleAction() {
   sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
   
   scrollToBottom();
-  await runAgentLoop(text || "Analyze uploaded context.", hasImage);
+  await runAgentLoop(text || "Analyze context.", hasImage);
 }
 
 inputText.addEventListener('input', function() { 
