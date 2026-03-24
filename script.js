@@ -6,46 +6,41 @@ import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 const OPENSKY_CONFIG = {
     agent_name: "Opensky",
     creator: "Hafij Shaikh",
-    version: "11.0.0" // ReAct Tool Loop
+    version: "12.0.0" // Smart Single-Model Architecture
 };
 
 const conversationHistory = [];
-const MAX_HISTORY = 20; // Increased memory
+const MAX_HISTORY = 20; 
 
-// --- REACT PROMPTING ---
-// This forces the model to "Think" before it speaks.
-const TOOLS_PROMPT = `
+// --- ADVANCED SYSTEM PROMPT ---
+const SYSTEM_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}. 
-You have access to tools. To use a tool, output the EXACT format:
-ACTION: tool_name ARGS: arg_value
+You are an intelligent agent with access to tools and data visualization.
 
-Available Tools:
-- wiki(topic) -> Get info from Wikipedia.
-- weather(city) -> Get weather.
-- define(word) -> Get definition.
-- country(name) -> Get country info.
-- pokemon(name) -> Get Pokemon data.
-- joke() -> Get a joke.
-- advice() -> Get advice.
-- bored() -> Get activity suggestion.
+CAPABILITIES:
+1. Tools: Use tools for real-time data (Weather, Wiki, Pokemon, etc). 
+   Format: ACTION: tool_name ARGS: value
+2. Graphs: You can create graphs using Chart.js. 
+   Format: \`\`\`chart { "type": "bar", "data": {...} }
+3. OCR: You can read text from uploaded images using Tesseract.
 
 RULES:
-1. If user asks for real-time data, facts, or specific API requests (Pokemon, Weather), use ACTION first.
-2. After using ACTION, you will receive OBSERVATION. Then, summarize it for the user.
-3. If user asks for charts/tables, generate a Markdown table.
-4. Reply in the user's language (Hindi, English, etc.).
-5. DO NOT say you cannot use tools. You MUST use them.
+- Be concise. Do not repeat yourself.
+- If asked for a list, give exactly what is asked (e.g., "give me an advice" = 1 item).
+- If you need data to answer a question, USE A TOOL. Do not guess.
+- Never say "I can't create graphs" or "I don't have access". You DO have access.
 
-Example:
-User: Pikachu
-Assistant: ACTION: pokemon ARGS: pikachu
-System: OBSERVATION: {"name": "Pikachu", "type": "Electric"...}
-Assistant: Here is the data for Pikachu: [Table/Text]
+TOOLS AVAILABLE:
+wiki(topic), weather(city), define(word), country(name), pokemon(name), joke(), advice(), bored().
 `;
 
-const MODELS = {
-  router: { id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", name: "Router" },
-  executor: { id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", name: "Core" }
+const MODEL_CONFIG = {
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC", // Smarter Model
+    name: "Phi-3.5 Mini",
+    options: {
+        temperature: 0.7,
+        repetition_penalty: 1.1 // Prevents looping
+    }
 };
 
 // ==========================================
@@ -67,13 +62,12 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 const imagePreview = document.getElementById('imagePreview');
 const removeImageBtn = document.getElementById('removeImageBtn');
 
-let routerEngine = null;
-let executorEngine = null; 
+let engine = null;
 let isGenerating = false;
 let currentImageBase64 = null; 
 
 // ==========================================
-// 3. TOOLS
+// 3. TOOLS & OCR
 // ==========================================
 const Tools = {
     wiki: async (q) => {
@@ -89,20 +83,22 @@ const Tools = {
         return { text: `Weather in ${name}: ${w.current_weather.temperature}°C, Wind ${w.current_weather.windspeed} km/h` };
     },
     define: async (word) => {
-        const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
-        const d = await res.json();
-        return { text: d[0].meanings[0].definitions[0].definition };
+        try {
+            const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+            const d = await res.json();
+            return { text: d[0].meanings[0].definitions[0].definition };
+        } catch { return { text: "Definition not found" }; }
     },
     country: async (name) => {
         const res = await fetch(`https://restcountries.com/v3.1/name/${name}`);
         const d = await res.json();
-        return { text: `${d[0].name.common}, Capital: ${d[0].capital}, Pop: ${d[0].population}`, image: d[0].flags?.svg };
+        return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
     },
     pokemon: async (name) => {
         const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
         const d = await res.json();
         return { 
-            text: `#${d.id} ${d.name.toUpperCase()}, Type: ${d.types.map(t=>t.type.name).join(', ')}, Stats: HP ${d.stats[0].base_stat}`,
+            text: `#${d.id} ${d.name.toUpperCase()}, Type: ${d.types.map(t=>t.type.name).join(', ')}`,
             image: d.sprites?.front_default
         };
     },
@@ -116,24 +112,31 @@ const Tools = {
     },
     bored: async () => {
         const d = await (await fetch("https://www.boredapi.com/api/activity")).json();
-        return { text: `${d.activity} (Type: ${d.type})` };
+        return { text: `${d.activity} (${d.type})` };
+    },
+    ocr: async (base64) => {
+        // Using Tesseract.js loaded in HTML
+        try {
+            const result = await Tesseract.recognize(`data:image/jpeg;base64,${base64}`, 'eng', { logger: m => console.log(m) });
+            return { text: result.data.text || "No text found." };
+        } catch(e) {
+            return { text: "OCR failed: " + e.message };
+        }
     }
 };
 
-// Detect ACTION tags and run tools
-async function runToolLogic(text) {
+// Parse Tool Action from model output
+async function handleToolAction(text) {
     const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([^\n]+)/i);
     if (!match) return null;
 
     const toolName = match[1].toLowerCase();
     const args = match[2].trim();
 
-    if (Tools[toolName]) {
-        try {
-            return await Tools[toolName](args);
-        } catch (e) {
-            return { text: `Tool ${toolName} failed: ${e.message}` };
-        }
+    if (toolName === 'ocr' && currentImageBase64) {
+        return await Tools.ocr(currentImageBase64);
+    } else if (Tools[toolName]) {
+        return await Tools[toolName](args);
     }
     return { text: `Unknown tool: ${toolName}` };
 }
@@ -149,18 +152,20 @@ async function init() {
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
 
         modelStatusContainer.innerHTML = `
-          <div class="model-card" id="card-router"><div class="model-card-name">Router</div><div class="model-card-desc">...</div></div>
-          <div class="model-card" id="card-executor"><div class="model-card-name">Core</div><div class="model-card-desc">...</div></div>
+          <div class="model-card" id="card-main">
+            <div class="model-card-name">${MODEL_CONFIG.name}</div>
+            <div class="model-card-desc">Loading Smart Core...</div>
+          </div>
         `;
 
-        loadingLabel.textContent = "Loading Router...";
-        routerEngine = await webllm.CreateMLCEngine(MODELS.router.id, {
-            initProgressCallback: (r) => updateModelUI('card-router', r, 0)
-        });
-
-        loadingLabel.textContent = "Loading Core...";
-        executorEngine = await webllm.CreateMLCEngine(MODELS.executor.id, {
-            initProgressCallback: (r) => updateModelUI('card-executor', r, 50)
+        loadingLabel.textContent = `Loading ${MODEL_CONFIG.name} (Smarter Model)...`;
+        engine = await webllm.CreateMLCEngine(MODEL_CONFIG.id, {
+            initProgressCallback: (report) => {
+                const p = Math.round(report.progress * 100);
+                document.querySelector('.model-card-desc').textContent = report.text;
+                sliderFill.style.width = `${p}%`;
+                loadingPercent.textContent = `${p}%`;
+            }
         });
 
         loadingLabel.textContent = "Ready.";
@@ -169,16 +174,7 @@ async function init() {
             chatContainer.classList.add('active');
             sendBtn.disabled = false;
         }, 500);
-    } catch (e) { showError("Init", e); }
-}
-
-function updateModelUI(id, r, base) {
-    const c = document.getElementById(id);
-    if(!c) return;
-    c.querySelector('.model-card-desc').textContent = r.text;
-    const p = Math.round(r.progress * 100);
-    sliderFill.style.width = `${base + p/2}%`;
-    loadingPercent.textContent = `${base + p/2}%`;
+    } catch (e) { showError("Init Failed", e); }
 }
 
 // ==========================================
@@ -210,29 +206,30 @@ async function runAgentLoop(query, hasImage) {
     const body = panel.querySelector('.agent-body');
 
     try {
-        // 1. Router
-        status.textContent = "Routing...";
-        const rRes = await routerEngine.chat.completions.create({
-            messages: [{role: "system", content: "Classify: CHAT or TASK"}, {role: "user", content: query}],
-            temp: 0.1, max_tokens: 5
-        });
-        const isTask = rRes.choices[0].message.content.trim().toUpperCase().includes("TASK");
-        status.textContent = isTask ? "⚡ TASK MODE" : "💬 CHAT MODE";
+        // Prepare history
+        const messages = [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...conversationHistory
+        ];
 
-        // 2. Loop for Tools
-        let history = [...conversationHistory];
+        // Handle Image
+        if (hasImage) {
+            messages.push({ role: "user", content: `[Image Uploaded] ${query}. Use ACTION: ocr ARGS: image to read text if needed.` });
+        } else {
+            messages.push({ role: "user", content: query });
+        }
+
+        // ReAct Loop
         let loops = 0;
         let finalText = "";
         
-        // Add system prompt
-        history.unshift({ role: "system", content: TOOLS_PROMPT });
-        if (hasImage) history.push({ role: "user", content: `[Image Context] ${query}` });
-        else history.push({ role: "user", content: query });
-
-        while (loops < 3) { // Max 3 tool calls per request to prevent infinite loop
-            const completion = await executorEngine.chat.completions.create({
-                messages: history,
-                temperature: 0.7,
+        while (loops < 3) {
+            status.textContent = loops === 0 ? "⚡ Processing..." : "🔧 Using Tool...";
+            
+            const completion = await engine.chat.completions.create({
+                messages: messages,
+                temperature: MODEL_CONFIG.options.temperature,
+                repetition_penalty: MODEL_CONFIG.options.repetition_penalty,
                 stream: true
             });
 
@@ -242,37 +239,31 @@ async function runAgentLoop(query, hasImage) {
                 const delta = chunk.choices[0].delta.content;
                 if (delta) {
                     currentChunk += delta;
-                    // Live preview
-                    body.textContent = currentChunk;
-                    parseMarkdown(currentChunk, content);
+                    body.textContent = currentChunk; // Live thoughts
+                    parseAndRender(currentChunk, content); // Live preview
                     smartScroll();
                 }
             }
             
             // Check if tool is needed
-            const toolResult = await runToolLogic(currentChunk);
+            const toolResult = await handleToolAction(currentChunk);
             if (toolResult) {
-                status.textContent = `🔧 Using Tool...`;
+                status.textContent = "✅ Tool Used";
                 
-                // Format Tool Result for Model
-                let obsText = `OBSERVATION: ${JSON.stringify(toolResult)}`;
-                
-                // Show Tool Result to User
-                let toolHtml = `<div class="tool-result"><b>Tool Output:</b><br>${toolResult.text}`;
-                if (toolResult.image) toolHtml += `<br><img src="${toolResult.image}" style="max-width:100px; border-radius:4px;">`;
+                // Show result to user
+                let toolHtml = `<div class="tool-result"><b>Tool Result:</b> ${toolResult.text}`;
+                if (toolResult.image) toolHtml += `<br><img src="${toolResult.image}" style="max-width:100px; border-radius:4px; margin-top:5px;">`;
                 toolHtml += `</div>`;
                 content.innerHTML += toolHtml;
 
                 // Feed back to model
-                history.push({ role: "assistant", content: currentChunk });
-                history.push({ role: "user", content: obsText }); 
+                messages.push({ role: "assistant", content: currentChunk });
+                messages.push({ role: "user", content: `OBSERVATION: ${JSON.stringify(toolResult.text)}. Now summarize or answer the user.` });
                 
-                // Continue loop to let model process observation
                 loops++;
             } else {
-                // No tool needed, we are done
                 finalText = currentChunk;
-                break;
+                break; // Done
             }
         }
 
@@ -290,18 +281,33 @@ async function runAgentLoop(query, hasImage) {
 }
 
 // ==========================================
-// 6. PARSER
+// 6. RENDERER
 // ==========================================
-function parseMarkdown(text, container) {
-    // Basic markdown
+function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    
-    // Code
+
+    // 1. Chart.js Support
+    html = html.replace(/```chart\s*([\s\S]*?)```/g, (match, json) => {
+        try {
+            const data = JSON.parse(json);
+            const id = 'chart_' + Math.random().toString(36).substr(2, 9);
+            // We create a placeholder that the main loop will fill if needed, or we use a trick:
+            setTimeout(() => {
+                const el = document.getElementById(id);
+                if(el) new Chart(el, { type: data.type || 'bar', data: data.data, options: { responsive: true, maintainAspectRatio: false } });
+            }, 100);
+            return `<div class="chart-container"><canvas id="${id}"></canvas></div>`;
+        } catch(e) {
+            return `<div style="color:red">Invalid Chart JSON</div>`;
+        }
+    });
+
+    // 2. Code
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
         `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`
     );
 
-    // Table
+    // 3. Table
     if (html.includes('|')) {
         const tReg = /^\|(.+)\|\s*\n\|[-:\s|]+\|\s*\n((?:\|.+\|\s*\n?)+)/gm;
         html = html.replace(tReg, (m, h, b) => {
@@ -341,8 +347,7 @@ async function handleAction() {
     if (isGenerating) {
         isGenerating = false;
         sendBtn.classList.remove('stop-btn');
-        if(routerEngine) await routerEngine.interruptGenerate();
-        if(executorEngine) await executorEngine.interruptGenerate();
+        if(engine) await engine.interruptGenerate();
         return;
     }
 
@@ -370,7 +375,7 @@ async function handleAction() {
     sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
     
     smartScroll();
-    await runAgentLoop(text || "Analyze this.", hasImg);
+    await runAgentLoop(text || "Read this image.", hasImg);
 }
 
 inputText.oninput = function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px'; };
