@@ -8,22 +8,22 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Qwen 2.5 3B (Fast, Smart)
+// MODEL: Qwen 2.5 3B
 const AGENT_MODEL = {
     id: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Minimal & Effective
+// SYSTEM PROMPT: Grounded & Stable
 const SYSTEM_PROMPT = `
-You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+You are ${OPENSKY_CONFIG.agent_name}, a helpful AI assistant created by ${OPENSKY_CONFIG.creator}.
 
-Your objective is to assist the user effectively.
-- For real-time data (weather, news, crypto), use the provided tools.
-- For math, logic, or creative tasks, solve them directly.
+Your purpose is to assist the user by answering questions, solving problems, and performing tasks.
+You must respond in the language the user uses.
+Keep your answers concise and relevant.
 
-TOOL FORMAT:
-If you need to use a tool, output STRICTLY:
+TOOL USAGE:
+If you need real-time information, use a tool by outputting this exact format:
 ACTION: tool_name ARGS: value
 
 AVAILABLE TOOLS:
@@ -37,13 +37,11 @@ AVAILABLE TOOLS:
 - bored()
 - crypto(coin_id)
 
-RULES:
-- If you use a tool, stop generating text after the ACTION line.
-- Do not invent answers if you can use a tool.
+If you use a tool, stop immediately after the ACTION line.
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 40; 
+const MAX_HISTORY = 20; // Keep short to prevent context drift
 
 // ==========================================
 // 2. DOM & STATE
@@ -62,9 +60,9 @@ const debugLog = document.getElementById('debugLog');
 let agentEngine = null;
 let isGenerating = false;
 
-// --- Smooth Progress State ---
-let currentProgress = 0;    // Current visual progress
-let targetProgress = 0;     // Target progress from engine
+// Smooth Progress State
+let currentProgress = 0;
+let targetProgress = 0;
 let animationFrameId = null;
 
 // ==========================================
@@ -130,14 +128,13 @@ function parseToolAction(text) {
 // 4. SMOOTH LOADING ANIMATION
 // ==========================================
 function animateProgress() {
-    // Ease towards target
     const diff = targetProgress - currentProgress;
     if (Math.abs(diff) > 0.01) {
-        currentProgress += diff * 0.1; // Smooth lerp
+        currentProgress += diff * 0.1;
         sliderFill.style.width = `${currentProgress}%`;
         loadingPercent.textContent = `${currentProgress.toFixed(2)}%`;
     }
-    if (currentProgress < 100) {
+    if (currentProgress < 100 || diff > 0) {
         animationFrameId = requestAnimationFrame(animateProgress);
     }
 }
@@ -172,6 +169,11 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
+        // Ensure history doesn't overflow context window (Prevents Gibberish)
+        while (conversationHistory.length > MAX_HISTORY * 2) {
+            conversationHistory.splice(0, 2); 
+        }
+
         let messages = [
             { role: "system", content: SYSTEM_PROMPT },
             ...conversationHistory,
@@ -185,7 +187,10 @@ async function runAgentLoop(query) {
             if (!isGenerating) break;
 
             const completion = await agentEngine.chat.completions.create({
-                messages: messages, temperature: 0.7, stream: true
+                messages: messages, 
+                temperature: 0.7, 
+                stream: true,
+                max_tokens: 2000 // Limit output to prevent runaway generation
             });
 
             let currentChunk = "";
@@ -217,20 +222,15 @@ async function runAgentLoop(query) {
                 messages.push({ role: "assistant", content: currentChunk });
                 messages.push({ role: "user", content: `OBSERVATION: ${JSON.stringify(result.text)}. Now answer.` });
                 
-                finalResponse = ""; // Reset for final answer
+                finalResponse = ""; 
                 loops++;
             } else {
-                break; // No tool, done
+                break; // Done
             }
         }
 
         conversationHistory.push({ role: "user", content: query });
         conversationHistory.push({ role: "assistant", content: finalResponse });
-        
-        // Memory Management (Prevent Gibberish)
-        if (conversationHistory.length > MAX_HISTORY * 2) {
-            conversationHistory.splice(0, 2);
-        }
 
         status.style.display = 'none';
 
@@ -292,26 +292,25 @@ async function init() {
         // Load Model
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
             initProgressCallback: (report) => {
-                // We only update the TARGET progress here.
-                // The animation loop handles the visual smoothness.
                 targetProgress = report.progress * 100;
                 document.getElementById('status-agent').textContent = report.text;
             }
         });
 
         // Finish up
-        targetProgress = 100; // Ensure we hit 100
+        targetProgress = 100; 
         document.getElementById('status-agent').textContent = "Ready";
 
         loadingLabel.textContent = "Ready.";
         
-        // Wait for animation to catch up slightly
         setTimeout(() => {
             cancelAnimationFrame(animationFrameId);
+            sliderFill.style.width = '100%';
+            loadingPercent.textContent = "100.00%";
             loadingScreen.classList.add('hidden');
             chatContainer.classList.add('active');
             sendBtn.disabled = false;
-        }, 600);
+        }, 800);
 
     } catch (e) { 
         cancelAnimationFrame(animationFrameId);
