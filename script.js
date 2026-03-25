@@ -8,34 +8,40 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// AGENT: Qwen2.5-1.5B (Smart & Light)
-// Uses ~1.5GB VRAM. Fits alongside Llama-3 on 8GB cards.
+// AGENT: Qwen2.5-1.5B (Fast & Light)
 const AGENT_MODEL = {
     id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// CORE: Llama-3 8B (Smartest)
-// Uses ~5.5GB VRAM.
+// CORE: Phi-3.5-Mini (Smart ~4B)
+// Uses ~2.5GB VRAM. Total usage ~4.5GB (Fits most GPUs).
 const CORE_MODEL = {
-    id: "Llama-3-8B-Instruct-q4f16_1-MLC",
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Core",
 };
 
 const AGENT_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You are a fast and capable assistant. Write a quick response.
+You are the fast drafter. Write a quick response.
 If you need tools: ACTION: tool_name ARGS: value
 Tools: wiki(topic), weather(city), pokemon(name), country(name), define(word), joke(), advice(), bored().
 `;
 
 const CORE_PROMPT = `
-You are the Core Intelligence of ${OPENSKY_CONFIG.agent_name}.
-You verify and correct the draft response. Ensure high quality and accuracy.
+You are the Core Intelligence of ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+You are reviewing a draft from the Agent.
+User Query: {{QUERY}}
+Agent Draft: {{DRAFT}}
+
+RULES:
+1. If the Draft is perfect, output ONLY: [OK]
+2. If the Draft has errors or is incomplete, output the CORRECTED, FINAL response.
+3. Do not repeat the Draft. Just give the final answer.
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 20; 
+const MAX_HISTORY = 40; // Increased Memory
 
 // ==========================================
 // 2. DOM
@@ -54,6 +60,20 @@ const debugLog = document.getElementById('debugLog');
 let agentEngine = null;
 let coreEngine = null;
 let isGenerating = false;
+
+// For smooth percentage
+let currentProgress = 0;
+let targetProgress = 0;
+let progressInterval;
+
+function updateProgressSmoothly() {
+    if (currentProgress < targetProgress) {
+        currentProgress += 0.1; // Smooth step
+        if (currentProgress > targetProgress) currentProgress = targetProgress;
+        sliderFill.style.width = `${currentProgress}%`;
+        loadingPercent.textContent = `${currentProgress.toFixed(2)}%`;
+    }
+}
 
 // ==========================================
 // 3. TOOLS
@@ -120,6 +140,7 @@ function createMessageDiv() {
     
     const status = document.createElement('div');
     status.className = 'agent-status';
+    // Restored Blinking Animation
     status.innerHTML = `<span class="agent-status-dot"></span><span class="status-text">Drafting...</span>`;
     
     const content = document.createElement('div');
@@ -138,7 +159,7 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // --- 1. AGENT PROCESS (Drafting) ---
+        // --- PHASE 1: AGENT (Drafting) ---
         let agentMessages = [
             { role: "system", content: AGENT_PROMPT },
             ...conversationHistory,
@@ -148,6 +169,11 @@ async function runAgentLoop(query) {
         let agentText = "";
         let loops = 0;
         let toolUsed = false;
+
+        // Start Core in Parallel (Pre-loading context)
+        // We assume simple queries won't need tools, so we start Core now.
+        // If tools are used, Core's compute is wasted, but it's cheap for Phi-3.5
+        let corePromise = null;
 
         while (loops < 3) {
             const completion = await agentEngine.chat.completions.create({
@@ -186,30 +212,34 @@ async function runAgentLoop(query) {
             }
         }
 
-        // --- 2. CORE PROCESS (Parallel Verification) ---
+        // --- PHASE 2: CORE (Refining) ---
+        // If tools were used, Agent is usually accurate. Skip Core to save time.
         if (!toolUsed) {
-            statusText.textContent = "Verifying...";
+            statusText.textContent = "Refining...";
+            
+            const corePromptText = CORE_PROMPT.replace("{{QUERY}}", query).replace("{{DRAFT}}", agentText);
             
             const coreMessages = [
-                { role: "system", content: CORE_PROMPT },
-                ...conversationHistory,
-                { role: "user", content: query }
+                { role: "system", content: corePromptText }
             ];
 
-            const coreCompletion = await coreEngine.chat.completions.create({
-                messages: coreMessages, temperature: 0.5, max_tokens: 1000
+            // Run Core
+            corePromise = coreEngine.chat.completions.create({
+                messages: coreMessages, temperature: 0.3, max_tokens: 1000
             });
 
+            const coreCompletion = await corePromise;
             const coreText = coreCompletion.choices[0].message.content.trim();
 
-            if (coreText && coreText.length > agentText.length * 0.8) { 
-                if (coreText.trim() !== agentText.trim()) {
-                    parseAndRender(coreText, content);
-                    content.innerHTML += `<div class="corrected-badge">✨ Corrected by Core</div>`;
-                    agentText = coreText;
-                } else {
-                    content.innerHTML += `<div class="verified-badge">✓ Verified</div>`;
-                }
+            // Check Result
+            if (coreText !== "[OK]") {
+                // CORE CORRECTED IT
+                parseAndRender(coreText, content);
+                content.innerHTML += `<div class="corrected-badge">✨ Refined by Core</div>`;
+                agentText = coreText; // Save corrected text to history
+            } else {
+                // CORE APPROVED
+                content.innerHTML += `<div class="verified-badge">✓ Verified</div>`;
             }
         }
 
@@ -225,14 +255,6 @@ async function runAgentLoop(query) {
         sendBtn.classList.remove('stop-btn');
         sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
     }
-}
-
-function similarity(s1, s2) {
-    const set1 = new Set(s1.split(" "));
-    const set2 = new Set(s2.split(" "));
-    const intersection = [...set1].filter(x => set2.has(x)).length;
-    const union = new Set([...s1.split(" "), ...s2.split(" ")]).size;
-    return union === 0 ? 1 : intersection / union;
 }
 
 // ==========================================
@@ -255,7 +277,7 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 6. INITIALIZATION (Precise Percentage)
+// 6. INITIALIZATION
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -279,39 +301,35 @@ async function init() {
           </div>
         `;
 
+        // Start smooth updater
+        clearInterval(progressInterval);
+        progressInterval = setInterval(updateProgressSmoothly, 50);
+
         // 1. Download Agent (0% -> 50%)
-        loadingLabel.textContent = `Loading Agent (1/2)...`;
+        loadingLabel.textContent = `Loading Agent...`;
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
             initProgressCallback: (report) => {
-                // FIX: 2 decimal places
-                const p = (report.progress * 100).toFixed(2);
-                
-                // Calculate global progress (Agent is first half)
-                const globalProgress = (report.progress * 50).toFixed(2);
-                
-                sliderFill.style.width = `${globalProgress}%`;
-                loadingPercent.textContent = `${p}%`;
+                targetProgress = report.progress * 50; // 0 to 50
                 document.getElementById('status-agent').textContent = report.text;
             }
         });
         document.getElementById('status-agent').textContent = "Ready";
+        currentProgress = 50; // Snap to 50
 
         // 2. Download Core (50% -> 100%)
-        loadingLabel.textContent = `Loading Core (2/2)...`;
+        loadingLabel.textContent = `Loading Core...`;
         coreEngine = await webllm.CreateMLCEngine(CORE_MODEL.id, {
             initProgressCallback: (report) => {
-                // FIX: 2 decimal places
-                const p = (report.progress * 100).toFixed(2);
-                
-                // Calculate global progress (Core is second half)
-                const globalProgress = (50 + report.progress * 50).toFixed(2);
-                
-                sliderFill.style.width = `${globalProgress}%`;
-                loadingPercent.textContent = `${p}%`;
+                targetProgress = 50 + (report.progress * 50); // 50 to 100
                 document.getElementById('status-core').textContent = report.text;
             }
         });
         document.getElementById('status-core').textContent = "Ready";
+        
+        clearInterval(progressInterval);
+        currentProgress = 100;
+        sliderFill.style.width = `100%`;
+        loadingPercent.textContent = `100.00%`;
 
         loadingLabel.textContent = "System Online.";
         setTimeout(() => {
@@ -321,6 +339,7 @@ async function init() {
         }, 500);
 
     } catch (e) { 
+        clearInterval(progressInterval);
         showError("Init Failed", e); 
     }
 }
