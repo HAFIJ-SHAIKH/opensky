@@ -8,51 +8,45 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Phi-3.5-mini
 const AGENT_MODEL = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Strict Identity & Behavior
+// SYSTEM PROMPT: Strict Identity + Few-Shot Tools
 const SYSTEM_PROMPT = `
-You are ${OPENSKY_CONFIG.agent_name}.
-Your creator is ${OPENSKY_CONFIG.creator}.
-You are a helpful assistant.
+You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+You are NOT an AI model or Phi. You are ${OPENSKY_CONFIG.agent_name}.
 
-### ROLE ENFORCEMENT ###
-You are NOT an AI model, language model, or assistant. You are ${OPENSKY_CONFIG.agent_name}.
-You have NO other identity. You were created by ${OPENSKY_CONFIG.creator}.
-If asked "Who are you?", "Who made you?", or "Are you Phi?", answer:
-"I am ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}."
-DO NOT mention Microsoft, Phi, or AI.
-
-### TOOLS ###
-Use tools ONLY for real-time data (Weather, Crypto, etc.).
+### TOOL USAGE ###
+Use tools for real-time data, images, or charts.
 FORMAT: ACTION: tool_name ARGS: value
 
 TOOLS:
-- get_weather(city)
-- get_crypto(id)
-- get_wiki(topic)
-- get_joke()
-- get_advice()
-- get_pokemon(name)
-- get_country(name)
+- get_weather(city) -> Returns temperature.
+- get_wiki(topic) -> Returns summary and image.
+- get_crypto(id) -> Returns price.
+- get_pokemon(name) -> Returns image and stats.
+- get_country(name) -> Returns flag and capital.
+- generate_chart(type, labels_json, data_json) -> Generates a chart image.
 
 ### EXAMPLES ###
-User: Who are you?
-Assistant: I am ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+
+User: Who made you?
+Assistant: I was created by ${OPENSKY_CONFIG.creator}.
+
+User: Pokemon Pikachu
+Assistant: ACTION: get_pokemon ARGS: Pikachu
+
+User: Chart of sales
+Assistant: ACTION: generate_chart ARGS: bar, ["Jan","Feb"], [10,20]
 
 User: Hello
-Assistant: Hello! How can I help you?
-
-User: Weather in London
-Assistant: ACTION: get_weather ARGS: London
+Assistant: Hello! I am ${OPENSKY_CONFIG.agent_name}. How can I help?
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 10; 
+const MAX_HISTORY = 12; 
 
 // ==========================================
 // 2. DOM & STATE
@@ -70,8 +64,9 @@ const debugLog = document.getElementById('debugLog');
 
 let agentEngine = null;
 let isGenerating = false;
+let abortController = new AbortController(); // For robust cancellation
 
-// Smooth Progress Variables
+// Smooth Progress
 let currentProgress = 0;
 let targetProgress = 0;
 let animationFrameId = null;
@@ -98,23 +93,38 @@ const Tools = {
         if(d[id]) return { text: `${id} is $${d[id].usd}` };
         return { text: "Coin not found" };
     },
-    get_joke: async () => {
-        const d = await (await fetch("https://v2.jokeapi.dev/joke/Any?type=single")).json();
-        return { text: d.joke };
-    },
-    get_advice: async () => {
-        const d = JSON.parse(await (await fetch("https://api.adviceslip.com/advice")).text());
-        return { text: d.slip.advice };
-    },
     get_pokemon: async (name) => {
-        const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
-        const d = await res.json();
-        return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
+        try {
+            const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
+            const d = await res.json();
+            return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
+        } catch { return { text: "Pokemon not found" }; }
     },
     get_country: async (name) => {
-        const res = await fetch(`https://restcountries.com/v3.1/name/${name}`);
-        const d = await res.json();
-        return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
+        try {
+            const res = await fetch(`https://restcountries.com/v3.1/name/${name}`);
+            const d = await res.json();
+            return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
+        } catch { return { text: "Country not found" }; }
+    },
+    generate_chart: async (args) => {
+        // Args format: "type, labels_json, data_json"
+        // We simply return a signal for the UI to render a chart
+        try {
+            const parts = args.match(/(\w+),\s*(\[.*?\]),\s*(\[.*?\])/);
+            if(!parts) return { text: "Invalid chart format. Use: type, [labels], [data]" };
+            
+            return { 
+                text: "Generating chart...", 
+                chart: {
+                    type: parts[1],
+                    labels: JSON.parse(parts[2]),
+                    data: JSON.parse(parts[3])
+                }
+            };
+        } catch(e) {
+            return { text: "Chart error: " + e.message };
+        }
     }
 };
 
@@ -178,52 +188,72 @@ async function runAgentLoop(query) {
 
         let finalResponse = "";
         let loops = 0;
+        let forceStop = false;
 
-        while (loops < 3) { 
-            if (!isGenerating) break;
+        while (loops < 5 && !forceStop) { 
+            if (!isGenerating) { forceStop = true; break; }
 
             const completion = await agentEngine.chat.completions.create({
                 messages: messages, 
                 temperature: 0.1, 
-                stream: true
+                stream: true,
+                // Pass signal for cancellation support (if supported by version)
+                // signal: abortController.signal 
             });
 
             let currentChunk = "";
             
-            // --- SMOOTH TEXT GENERATION ---
-            // We use a TextNode for smooth appending instead of innerHTML on every chunk
-            // This prevents the "jumping/skipping" effect.
+            // Smooth Text Node Strategy
             let textNode = document.createTextNode("");
             content.appendChild(textNode);
 
             for await (const chunk of completion) {
-                if (!isGenerating) break;
+                if (!isGenerating) { forceStop = true; break; }
+                
                 const delta = chunk.choices[0].delta.content;
                 if (delta) {
                     currentChunk += delta;
                     finalResponse += delta;
-                    
-                    // 1. Append raw text for smooth visual
                     textNode.nodeValue += delta;
                     smartScroll();
                 }
             }
 
-            // 2. After streaming, parse Markdown once (for formatting)
-            // This keeps the text smooth during typing, but bold/code works at the end.
+            if (forceStop) break;
+
+            // Parse Markdown after stream finishes for this turn
             parseAndRender(finalResponse, content);
 
             // Check for Tool
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
-                statusText.textContent = "Fetching Data...";
+                statusText.textContent = "Running Tool...";
                 
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
                 
                 // Visualize Result
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
-                if (result.image) resultHtml += `<img src="${result.image}" alt="img">`;
+                
+                // Handle Images from API
+                if (result.image) {
+                    resultHtml += `<img src="${result.image}" alt="img" style="max-width:100%; border-radius:8px; margin-top:8px; display:block;">`;
+                }
+                
+                // Handle Charts
+                if (result.chart) {
+                    const chartId = 'chart_' + Math.random().toString(36).substr(2, 9);
+                    resultHtml += `<div style="height:250px; margin-top:10px;"><canvas id="${chartId}"></canvas></div>`;
+                    setTimeout(() => {
+                        const ctx = document.getElementById(chartId);
+                        if(ctx) new Chart(ctx, { 
+                            type: result.chart.type || 'bar', 
+                            data: { labels: result.chart.labels, datasets: [{ label: 'Data', data: result.chart.data, borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.1)' }] },
+                            options: { responsive: true, maintainAspectRatio: false }
+                        }
+                    )}, 100);
+                }
+
                 content.innerHTML += resultHtml;
                 
                 // Feed back to model
@@ -243,8 +273,11 @@ async function runAgentLoop(query) {
         status.style.display = 'none';
 
     } catch (e) {
-        content.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
+        if (!e.message.includes("interrupt")) {
+            content.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
+        }
     } finally {
+        // Ensure state is 100% reset
         isGenerating = false;
         sendBtn.classList.remove('stop-btn');
         sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
@@ -291,13 +324,11 @@ async function init() {
           </div>
         `;
 
-        // Start Smooth Animation Loop
         cancelAnimationFrame(animationFrameId);
         currentProgress = 0;
         targetProgress = 0;
         animationFrameId = requestAnimationFrame(animateProgress);
 
-        // Load Model
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
             initProgressCallback: (report) => {
                 targetProgress = report.progress * 100;
@@ -305,7 +336,6 @@ async function init() {
             }
         });
 
-        // Finish up
         targetProgress = 100; 
         document.getElementById('status-agent').textContent = "Ready";
 
@@ -332,7 +362,8 @@ async function init() {
 
 async function handleAction() {
     if (isGenerating) {
-        isGenerating = false;
+        // Robust Stop Logic
+        isGenerating = false; 
         sendBtn.classList.remove('stop-btn');
         if(agentEngine) await agentEngine.interruptGenerate();
         return;
