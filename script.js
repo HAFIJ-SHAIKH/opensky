@@ -8,27 +8,40 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Qwen 2.5 3B
-// NOTE: This is a small model (3B). It requires short context and simple instructions.
+// MODEL: Phi-3.5-mini (3.8B)
+// Why? Qwen-3B ID is not in WebLLM registry (causes gibberish).
+// Phi-3.5 is verified, fast, and smarter than 3B models.
 const AGENT_MODEL = {
-    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
+    id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Simplified for Small Models
+// SYSTEM PROMPT: Simple & Strict
 const SYSTEM_PROMPT = `
-You are a helpful assistant named ${OPENSKY_CONFIG.agent_name}.
-You were created by ${OPENSKY_CONFIG.creator}.
+You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 
-Rules:
-1. Be concise.
-2. Answer directly.
-3. To use a tool, output: ACTION: tool_name ARGS: value
-4. Available tools: wiki(topic), weather(city), crypto(id), joke(), advice(), bored(), pokemon(name), country(name), define(word).
+You are a helpful assistant.
+To use a tool, output STRICTLY in this format:
+ACTION: tool_name ARGS: value
+
+TOOLS:
+- wiki(topic)
+- weather(city)
+- pokemon(name)
+- country(name)
+- define(word)
+- joke()
+- advice()
+- bored()
+- crypto(id)
+
+If you use a tool, stop generating immediately after the action line.
+If you do not know the answer, say "I don't know".
+Do not generate random text.
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 10; // Very short memory for 3B models
+const MAX_HISTORY = 20; 
 
 // ==========================================
 // 2. DOM & STATE
@@ -47,7 +60,7 @@ const debugLog = document.getElementById('debugLog');
 let agentEngine = null;
 let isGenerating = false;
 
-// Smooth Progress
+// Smooth Progress State
 let currentProgress = 0;
 let targetProgress = 0;
 let animationFrameId = null;
@@ -101,7 +114,7 @@ const Tools = {
         const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
         const d = await res.json();
         if(d[id]) return { text: `${id} is $${d[id].usd}` };
-        return { text: "Coin not found" };
+        return { text: "Coin not found (use ids like bitcoin, ethereum)" };
     }
 };
 
@@ -112,38 +125,7 @@ function parseToolAction(text) {
 }
 
 // ==========================================
-// 4. GIBBERISH DETECTOR
-// ==========================================
-function isGibberish(text) {
-    // Detect common hallucination patterns from Qwen 2.5 3B
-    const patterns = [
-        /Notre_Dame/i,
-        /adia November/i,
-        /RTLIater/i,
-        /eter__/i,
-        /google Israelisimilar/i,
-        /\.\.\.\.\.\./, // Multiple dots
-        /{.*}/, // JSON artifacts
-        /</?,?>/ // XML/HTML artifacts
-    ];
-    
-    let noiseCount = 0;
-    for(const p of patterns) {
-        if(p.test(text)) noiseCount++;
-    }
-    
-    // If we see 2 or more artifacts, it's likely garbage
-    if(noiseCount >= 2) return true;
-    
-    // Check for high ratio of non-alphanumeric characters
-    const clean = text.replace(/[^a-zA-Z0-9\s]/g, '');
-    if (text.length > 50 && clean.length < text.length * 0.7) return true;
-
-    return false;
-}
-
-// ==========================================
-// 5. SMOOTH LOADING ANIMATION
+// 4. SMOOTH LOADING ANIMATION
 // ==========================================
 function animateProgress() {
     const diff = targetProgress - currentProgress;
@@ -156,7 +138,7 @@ function animateProgress() {
 }
 
 // ==========================================
-// 6. LOGIC
+// 5. LOGIC
 // ==========================================
 
 function smartScroll() { messagesArea.scrollTop = messagesArea.scrollHeight; }
@@ -185,11 +167,8 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // AGGRESSIVE MEMORY MANAGEMENT
-        while (conversationHistory.length > MAX_HISTORY * 2) {
-            conversationHistory.shift();
-            conversationHistory.shift();
-        }
+        // Reset history if too long
+        if (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.length = 0;
 
         let messages = [
             { role: "system", content: SYSTEM_PROMPT },
@@ -203,42 +182,28 @@ async function runAgentLoop(query) {
         while (loops < 3) { 
             if (!isGenerating) break;
 
-            // CRITICAL: Temperature 0.0 and Low Tokens for stability
             const completion = await agentEngine.chat.completions.create({
                 messages: messages, 
-                temperature: 0.0, 
-                max_tokens: 1000, 
+                temperature: 0.1, // Low temp for strict adherence
                 stream: true
             });
 
             let currentChunk = "";
-            let streamBroken = false;
-
             for await (const chunk of completion) {
                 if (!isGenerating) break;
                 const delta = chunk.choices[0].delta.content;
                 if (delta) {
                     currentChunk += delta;
                     finalResponse += delta;
-
-                    // LIVE GIBBERISH FILTER
-                    if (isGibberish(currentChunk)) {
-                        streamBroken = true;
-                        console.warn("Gibberish detected. Stopping stream.");
-                        // Add a clean break message
-                        finalResponse = "[Generating error... please try again]";
-                        break; 
+                    
+                    // Safety: Stop if model goes crazy (rare with Phi-3.5)
+                    if (finalResponse.length > 2000 && !finalResponse.includes(" ")) {
+                        throw new Error("Hallucination detected.");
                     }
 
                     parseAndRender(finalResponse, content);
                     smartScroll();
                 }
-            }
-
-            if (streamBroken) {
-                // If we stopped due to gibberish, clear history to reset context
-                conversationHistory.length = 0;
-                break;
             }
 
             // Check for Tool
@@ -254,9 +219,9 @@ async function runAgentLoop(query) {
                 if (result.image) resultHtml += `<img src="${result.image}" alt="img">`;
                 content.innerHTML += resultHtml;
                 
-                // Feed back
+                // Feed back to model
                 messages.push({ role: "assistant", content: currentChunk });
-                messages.push({ role: "user", content: `Observation: ${JSON.stringify(result.text)}` });
+                messages.push({ role: "user", content: `Observation: ${result.text}. Answer now.` });
                 
                 finalResponse = ""; 
                 loops++;
@@ -280,7 +245,7 @@ async function runAgentLoop(query) {
 }
 
 // ==========================================
-// 7. RENDERER
+// 6. RENDERER
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -299,7 +264,7 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 8. INITIALIZATION
+// 7. INITIALIZATION
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -355,7 +320,7 @@ async function init() {
 }
 
 // ==========================================
-// 9. EVENTS
+// 8. EVENTS
 // ==========================================
 
 async function handleAction() {
