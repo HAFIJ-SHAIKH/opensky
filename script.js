@@ -8,39 +8,38 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Qwen 2.5 7B (High Intelligence, 128k Context Support)
-const MODEL_CONFIG = {
-    id: "Qwen2.5-7B-Instruct-q4f16_1-MLC",
-    name: "Qwen 2.5 7B",
-    // Qwen supports up to 128k, but we limit to 8k for browser stability/memory
-    context_window_size: 8192 
+// MODEL: Qwen 2.5 3B (Fast, Smart)
+const AGENT_MODEL = {
+    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
+    name: "Agent",
 };
 
-// ENHANCED PROMPT FOR QWEN 2.5
+// SYSTEM PROMPT: Minimal & Effective
 const SYSTEM_PROMPT = `
-You are ${OPENSKY_CONFIG.agent_name}, a highly advanced AI created by ${OPENSKY_CONFIG.creator}.
+You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
 
-CORE IDENTITY:
-- Name: ${OPENSKY_CONFIG.agent_name}
-- Creator: ${OPENSKY_CONFIG.creator}
-- Role: Advanced Reasoning Agent.
+Your objective is to assist the user effectively.
+- For real-time data (weather, news, crypto), use the provided tools.
+- For math, logic, or creative tasks, solve them directly.
 
-CAPABILITIES:
-1. **Programming**: You are an expert in 92+ programming languages. Generate clean, efficient code.
-2. **Mathematics**: Solve complex mathematical and logical problems step-by-step.
-3. **Multilingual**: You speak 29+ languages fluently.
-4. **Data Extraction**: You can convert unstructured text into clean JSON or Tables.
-5. **Agentic Tasks**: You can use external tools to get real-time data.
-
-TOOL USAGE:
-If you need real-time information or specific data, use the following format:
+TOOL FORMAT:
+If you need to use a tool, output STRICTLY:
 ACTION: tool_name ARGS: value
-Available Tools: wiki(topic), weather(city), pokemon(name), country(name), define(word), joke(), advice(), bored().
+
+AVAILABLE TOOLS:
+- wiki(topic)
+- weather(city)
+- pokemon(name)
+- country(name)
+- define(word)
+- joke()
+- advice()
+- bored()
+- crypto(coin_id)
 
 RULES:
-- Always identify yourself as ${OPENSKY_CONFIG.agent_name}.
-- Do not hallucinate data. Use tools if you lack information.
-- Format data into Markdown tables or JSON when requested.
+- If you use a tool, stop generating text after the ACTION line.
+- Do not invent answers if you can use a tool.
 `;
 
 const conversationHistory = [];
@@ -60,25 +59,16 @@ const loadingLabel = document.getElementById('loadingLabel');
 const modelStatusContainer = document.getElementById('modelStatusContainer');
 const debugLog = document.getElementById('debugLog');
 
-let engine = null;
+let agentEngine = null;
 let isGenerating = false;
 
-// Progress Smoother
-let currentProgress = 0;
-let targetProgress = 0;
-let progressInterval;
-
-function updateProgressSmoothly() {
-    if (currentProgress < targetProgress) {
-        currentProgress += 0.5; 
-        if (currentProgress > targetProgress) currentProgress = targetProgress;
-        sliderFill.style.width = `${currentProgress}%`;
-        loadingPercent.textContent = `${currentProgress.toFixed(2)}%`;
-    }
-}
+// --- Smooth Progress State ---
+let currentProgress = 0;    // Current visual progress
+let targetProgress = 0;     // Target progress from engine
+let animationFrameId = null;
 
 // ==========================================
-// 3. TOOLS (Agentic Capabilities)
+// 3. TOOLS
 // ==========================================
 const Tools = {
     wiki: async (q) => {
@@ -91,24 +81,24 @@ const Tools = {
         if(!geo.results?.[0]) return { text: "City not found" };
         const { latitude, longitude, name } = geo.results[0];
         const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
-        return { text: `Weather in ${name}: ${w.current_weather.temperature}°C, Wind ${w.current_weather.windspeed} km/h` };
+        return { text: `Weather in ${name}: ${w.current_weather.temperature}°C` };
     },
     define: async (word) => {
         try {
             const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
             const d = await res.json();
             return { text: d[0].meanings[0].definitions[0].definition };
-        } catch { return { text: "Definition not found" }; }
+        } catch { return { text: "Not found" }; }
+    },
+    pokemon: async (name) => {
+        const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
+        const d = await res.json();
+        return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
     },
     country: async (name) => {
         const res = await fetch(`https://restcountries.com/v3.1/name/${name}`);
         const d = await res.json();
         return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
-    },
-    pokemon: async (name) => {
-        const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
-        const d = await res.json();
-        return { text: `#${d.id} ${d.name}, Type: ${d.types.map(t=>t.type.name).join(', ')}`, image: d.sprites?.front_default };
     },
     joke: async () => {
         const d = await (await fetch("https://v2.jokeapi.dev/joke/Any?type=single")).json();
@@ -120,7 +110,13 @@ const Tools = {
     },
     bored: async () => {
         const d = await (await fetch("https://www.boredapi.com/api/activity")).json();
-        return { text: `${d.activity} (${d.type})` };
+        return { text: d.activity };
+    },
+    crypto: async (id) => {
+        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+        const d = await res.json();
+        if(d[id]) return { text: `${id} is $${d[id].usd}` };
+        return { text: "Coin not found (use ids like bitcoin, ethereum)" };
     }
 };
 
@@ -131,7 +127,23 @@ function parseToolAction(text) {
 }
 
 // ==========================================
-// 4. LOGIC
+// 4. SMOOTH LOADING ANIMATION
+// ==========================================
+function animateProgress() {
+    // Ease towards target
+    const diff = targetProgress - currentProgress;
+    if (Math.abs(diff) > 0.01) {
+        currentProgress += diff * 0.1; // Smooth lerp
+        sliderFill.style.width = `${currentProgress}%`;
+        loadingPercent.textContent = `${currentProgress.toFixed(2)}%`;
+    }
+    if (currentProgress < 100) {
+        animationFrameId = requestAnimationFrame(animateProgress);
+    }
+}
+
+// ==========================================
+// 5. LOGIC
 // ==========================================
 
 function smartScroll() { messagesArea.scrollTop = messagesArea.scrollHeight; }
@@ -166,19 +178,14 @@ async function runAgentLoop(query) {
             { role: "user", content: query }
         ];
 
-        let fullResponse = "";
+        let finalResponse = "";
         let loops = 0;
 
-        // ReAct Loop (Reason + Act)
-        while (loops < 5) {
+        while (loops < 5) { 
             if (!isGenerating) break;
-            
-            statusText.textContent = loops === 0 ? "Thinking..." : "Processing...";
 
-            const completion = await engine.chat.completions.create({
-                messages: messages, 
-                temperature: 0.7, 
-                stream: true
+            const completion = await agentEngine.chat.completions.create({
+                messages: messages, temperature: 0.7, stream: true
             });
 
             let currentChunk = "";
@@ -187,38 +194,42 @@ async function runAgentLoop(query) {
                 const delta = chunk.choices[0].delta.content;
                 if (delta) {
                     currentChunk += delta;
-                    fullResponse += delta;
-                    parseAndRender(fullResponse, content);
+                    finalResponse += delta;
+                    parseAndRender(finalResponse, content);
                     smartScroll();
                 }
             }
 
+            // Check for Tool
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
-                statusText.textContent = `Using Tool: ${toolCall.name}...`;
+                statusText.textContent = "Fetching Data...";
+                
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
                 
+                // Visualize Result
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
-                if (result.image) resultHtml += `<img src="${result.image}">`;
+                if (result.image) resultHtml += `<img src="${result.image}" alt="img">`;
                 content.innerHTML += resultHtml;
                 
-                // Feed back observation
+                // Feed back to model
                 messages.push({ role: "assistant", content: currentChunk });
                 messages.push({ role: "user", content: `OBSERVATION: ${JSON.stringify(result.text)}. Now answer.` });
-                fullResponse = ""; // Reset for final answer
+                
+                finalResponse = ""; // Reset for final answer
                 loops++;
             } else {
-                // No tool, finished
-                break;
+                break; // No tool, done
             }
         }
 
-        if (isGenerating) {
-            conversationHistory.push({ role: "user", content: query });
-            conversationHistory.push({ role: "assistant", content: fullResponse });
-            // Memory Management
-            if (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.splice(0, 2);
+        conversationHistory.push({ role: "user", content: query });
+        conversationHistory.push({ role: "assistant", content: finalResponse });
+        
+        // Memory Management (Prevent Gibberish)
+        if (conversationHistory.length > MAX_HISTORY * 2) {
+            conversationHistory.splice(0, 2);
         }
 
         status.style.display = 'none';
@@ -233,29 +244,16 @@ async function runAgentLoop(query) {
 }
 
 // ==========================================
-// 5. RENDERER (Supports Code, Tables, Math)
+// 6. RENDERER
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     
-    // Hide think tags
-    html = html.replace(/&lt;think&gt;[\s\S]*?&lt;\/think&gt;/g, '');
-    
-    // Code Blocks
+    // Basic Markdown
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
         `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`
     );
     
-    // Tables (Basic Markdown Support)
-    // Regex for markdown tables
-    html = html.replace(/^\|(.+)\|\s*\n\|[-:\s|]+\|\s*\n((?:\|.+\|\s*\n?)+)/gm, (match, header, body) => {
-        const h = header.split('|').filter(x=>x.trim()).map(x=>`<th>${x.trim()}</th>`).join('');
-        const b = body.trim().split('\n').map(row => 
-            `<tr>${row.split('|').filter(x=>x.trim()).map(x=>`<td>${x.trim()}</td>`).join('')}</tr>`
-        ).join('');
-        return `<table><thead><tr>${h}</tr></thead><tbody>${b}</tbody></table>`;
-    });
-
     container.innerHTML = html.replace(/\n/g, '<br>');
 }
 
@@ -265,7 +263,7 @@ window.copyCode = (btn) => {
 };
 
 // ==========================================
-// 6. INITIALIZATION
+// 7. INITIALIZATION
 // ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
@@ -275,59 +273,61 @@ function showError(t, e) {
 
 async function init() {
     try {
-        loadingLabel.textContent = "Checking WebGPU...";
+        loadingLabel.textContent = "Initializing...";
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
 
         modelStatusContainer.innerHTML = `
           <div class="model-card">
-            <div class="model-card-name">${MODEL_CONFIG.name}</div>
-            <div class="model-card-desc" id="status-model">Waiting...</div>
+            <div class="model-card-name">${AGENT_MODEL.name}</div>
+            <div class="model-card-desc" id="status-agent">Waiting...</div>
           </div>
         `;
 
-        // Start smooth updater
-        clearInterval(progressInterval);
-        progressInterval = setInterval(updateProgressSmoothly, 30);
+        // Start Smooth Animation Loop
+        cancelAnimationFrame(animationFrameId);
+        currentProgress = 0;
+        targetProgress = 0;
+        animationFrameId = requestAnimationFrame(animateProgress);
 
-        loadingLabel.textContent = `Loading Qwen 2.5 7B...`;
-        
-        engine = await webllm.CreateMLCEngine(MODEL_CONFIG.id, {
+        // Load Model
+        agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
             initProgressCallback: (report) => {
+                // We only update the TARGET progress here.
+                // The animation loop handles the visual smoothness.
                 targetProgress = report.progress * 100;
-                document.getElementById('status-model').textContent = report.text;
-            },
-            context_window_size: MODEL_CONFIG.context_window_size // Enable Long Memory
+                document.getElementById('status-agent').textContent = report.text;
+            }
         });
 
-        document.getElementById('status-model').textContent = "Ready";
-        
-        clearInterval(progressInterval);
-        currentProgress = 100;
-        sliderFill.style.width = `100%`;
-        loadingPercent.textContent = `100.00%`;
+        // Finish up
+        targetProgress = 100; // Ensure we hit 100
+        document.getElementById('status-agent').textContent = "Ready";
 
-        loadingLabel.textContent = "System Online.";
+        loadingLabel.textContent = "Ready.";
+        
+        // Wait for animation to catch up slightly
         setTimeout(() => {
+            cancelAnimationFrame(animationFrameId);
             loadingScreen.classList.add('hidden');
             chatContainer.classList.add('active');
             sendBtn.disabled = false;
-        }, 500);
+        }, 600);
 
     } catch (e) { 
-        clearInterval(progressInterval);
+        cancelAnimationFrame(animationFrameId);
         showError("Init Failed", e); 
     }
 }
 
 // ==========================================
-// 7. EVENTS
+// 8. EVENTS
 // ==========================================
 
 async function handleAction() {
     if (isGenerating) {
         isGenerating = false;
         sendBtn.classList.remove('stop-btn');
-        if(engine) await engine.interruptGenerate();
+        if(agentEngine) await agentEngine.interruptGenerate();
         return;
     }
 
