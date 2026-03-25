@@ -9,39 +9,50 @@ const OPENSKY_CONFIG = {
 };
 
 // MODEL: Phi-3.5-mini (3.8B)
-// Why? Qwen-3B ID is not in WebLLM registry (causes gibberish).
-// Phi-3.5 is verified, fast, and smarter than 3B models.
+// Robust, Smart, and follows instructions perfectly.
 const AGENT_MODEL = {
     id: "Phi-3.5-mini-instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Simple & Strict
+// SYSTEM PROMPT: Strict "Few-Shot" to prevent hallucination
 const SYSTEM_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+You are a helpful, friendly assistant.
 
-You are a helpful assistant.
-To use a tool, output STRICTLY in this format:
+CRITICAL RULES:
+1. For greetings (Hi, Hello) or simple math (1+1), RESPOND NORMALLY. DO NOT USE TOOLS.
+2. For real-time data (Weather, Crypto, News), use the provided tools.
+3. If you don't know the answer, say "I don't know".
+
+TOOL FORMAT (Use ONLY when needed):
 ACTION: tool_name ARGS: value
 
-TOOLS:
-- wiki(topic)
-- weather(city)
-- pokemon(name)
-- country(name)
-- define(word)
-- joke()
-- advice()
-- bored()
-- crypto(id)
+EXAMPLES:
+User: Hello
+Assistant: Hello! How can I help you today?
 
-If you use a tool, stop generating immediately after the action line.
-If you do not know the answer, say "I don't know".
-Do not generate random text.
+User: 55 + 76
+Assistant: 131.
+
+User: Weather in Paris
+Assistant: ACTION: get_weather ARGS: Paris
+
+User: Bitcoin price
+Assistant: ACTION: get_crypto ARGS: bitcoin
+
+AVAILABLE TOOLS:
+- get_weather(city)
+- get_crypto(id)
+- get_wiki(topic)
+- get_joke()
+- get_advice()
+- get_pokemon(name)
+- get_country(name)
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 20; 
+const MAX_HISTORY = 10; 
 
 // ==========================================
 // 2. DOM & STATE
@@ -60,7 +71,7 @@ const debugLog = document.getElementById('debugLog');
 let agentEngine = null;
 let isGenerating = false;
 
-// Smooth Progress State
+// Smooth Progress Variables
 let currentProgress = 0;
 let targetProgress = 0;
 let animationFrameId = null;
@@ -69,56 +80,46 @@ let animationFrameId = null;
 // 3. TOOLS
 // ==========================================
 const Tools = {
-    wiki: async (q) => {
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`);
-        const d = await res.json();
-        return { text: d.extract, image: d.thumbnail?.source };
-    },
-    weather: async (city) => {
+    get_weather: async (city) => {
         const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}`)).json();
         if(!geo.results?.[0]) return { text: "City not found" };
         const { latitude, longitude, name } = geo.results[0];
         const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
         return { text: `Weather in ${name}: ${w.current_weather.temperature}°C` };
     },
-    define: async (word) => {
-        try {
-            const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
-            const d = await res.json();
-            return { text: d[0].meanings[0].definitions[0].definition };
-        } catch { return { text: "Not found" }; }
+    get_wiki: async (topic) => {
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
+        const d = await res.json();
+        return { text: d.extract, image: d.thumbnail?.source };
     },
-    pokemon: async (name) => {
+    get_crypto: async (id) => {
+        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+        const d = await res.json();
+        if(d[id]) return { text: `${id} is $${d[id].usd}` };
+        return { text: "Coin not found" };
+    },
+    get_joke: async () => {
+        const d = await (await fetch("https://v2.jokeapi.dev/joke/Any?type=single")).json();
+        return { text: d.joke };
+    },
+    get_advice: async () => {
+        const d = JSON.parse(await (await fetch("https://api.adviceslip.com/advice")).text());
+        return { text: d.slip.advice };
+    },
+    get_pokemon: async (name) => {
         const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
         const d = await res.json();
         return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
     },
-    country: async (name) => {
+    get_country: async (name) => {
         const res = await fetch(`https://restcountries.com/v3.1/name/${name}`);
         const d = await res.json();
         return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
-    },
-    joke: async () => {
-        const d = await (await fetch("https://v2.jokeapi.dev/joke/Any?type=single")).json();
-        return { text: d.joke };
-    },
-    advice: async () => {
-        const d = JSON.parse(await (await fetch("https://api.adviceslip.com/advice")).text());
-        return { text: d.slip.advice };
-    },
-    bored: async () => {
-        const d = await (await fetch("https://www.boredapi.com/api/activity")).json();
-        return { text: d.activity };
-    },
-    crypto: async (id) => {
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
-        const d = await res.json();
-        if(d[id]) return { text: `${id} is $${d[id].usd}` };
-        return { text: "Coin not found (use ids like bitcoin, ethereum)" };
     }
 };
 
 function parseToolAction(text) {
+    // Look for "ACTION: name ARGS: value"
     const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([^\n]+)/i);
     if (!match) return null;
     return { name: match[1].toLowerCase(), args: match[2].trim() };
@@ -128,9 +129,10 @@ function parseToolAction(text) {
 // 4. SMOOTH LOADING ANIMATION
 // ==========================================
 function animateProgress() {
+    // Independent animation loop for smooth numbers
     const diff = targetProgress - currentProgress;
-    if (Math.abs(diff) > 0.01) {
-        currentProgress += diff * 0.1;
+    if (Math.abs(diff) > 0.05) {
+        currentProgress += diff * 0.08; // Smooth lerp
         sliderFill.style.width = `${currentProgress}%`;
         loadingPercent.textContent = `${currentProgress.toFixed(2)}%`;
     }
@@ -167,8 +169,8 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // Reset history if too long
-        if (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.length = 0;
+        // Trim history to prevent context overflow
+        while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
         let messages = [
             { role: "system", content: SYSTEM_PROMPT },
@@ -184,7 +186,7 @@ async function runAgentLoop(query) {
 
             const completion = await agentEngine.chat.completions.create({
                 messages: messages, 
-                temperature: 0.1, // Low temp for strict adherence
+                temperature: 0.3, // Lower temperature for strict logic
                 stream: true
             });
 
@@ -195,12 +197,6 @@ async function runAgentLoop(query) {
                 if (delta) {
                     currentChunk += delta;
                     finalResponse += delta;
-                    
-                    // Safety: Stop if model goes crazy (rare with Phi-3.5)
-                    if (finalResponse.length > 2000 && !finalResponse.includes(" ")) {
-                        throw new Error("Hallucination detected.");
-                    }
-
                     parseAndRender(finalResponse, content);
                     smartScroll();
                 }
@@ -209,7 +205,7 @@ async function runAgentLoop(query) {
             // Check for Tool
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
-                statusText.textContent = "Running Tool...";
+                statusText.textContent = "Fetching Data...";
                 
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
@@ -226,7 +222,7 @@ async function runAgentLoop(query) {
                 finalResponse = ""; 
                 loops++;
             } else {
-                break; // Done
+                break; // No tool, done
             }
         }
 
