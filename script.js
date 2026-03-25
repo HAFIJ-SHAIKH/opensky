@@ -8,40 +8,45 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Qwen 2.5 3B
-// Note: This is a standard ID. We do NOT need a custom appConfig.
-// WebLLM will automatically find the correct model files on Hugging Face.
+// MODEL: Qwen2.5-1.5B
+// Best for Hinglish, Multilingual, and fast logic.
 const AGENT_MODEL = {
-    id: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
-    name: "Qwen 2.5 3B",
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    name: "Agent",
 };
 
-// SYSTEM PROMPT: Strict Identity & Execution
+// SYSTEM PROMPT: Strict Identity + Hinglish + Tool Logic
 const SYSTEM_PROMPT = `
-You are ${OPENSKY_CONFIG.agent_name}, an AI assistant.
-You were created by ${OPENSKY_CONFIG.creator}.
+You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+You are NOT an AI model. You are ${OPENSKY_CONFIG.agent_name}.
+You speak multiple languages, including Hinglish (Hindi + English mix).
 
-### IDENTITY RULES ###
-1. You are an AI. You are ${OPENSKY_CONFIG.agent_name}.
-2. You are NOT Qwen, ChatGPT, or any other model.
-3. If asked your name: "I am ${OPENSKY_CONFIG.agent_name}, an AI assistant."
-4. If asked your creator: "I was created by ${OPENSKY_CONFIG.creator}."
+### CRITICAL TOOL RULES ###
+1. If user asks for CHART: Call generate_chart.
+2. If user asks for CHART WITH IMAGES: First call get_wiki (to get images), then call generate_chart.
+3. Stop generating text immediately after calling a tool.
 
-### BEHAVIOR RULES ###
-1. Do NOT explain how you do things.
-2. Do NOT say "I will use a tool". Just use it.
-3. Execute tasks immediately.
+TOOL FORMAT:
+ACTION: tool_name ARGS: json_arguments
 
-### TOOLS ###
-Use tools for real-time data, charts, or images.
-FORMAT: ACTION: tool_name ARGS: arguments
+AVAILABLE TOOLS:
+- get_weather(city) -> {"city": "value"}
+- get_wiki(topic) -> {"topic": "value"} (Returns image and text)
+- get_crypto(id) -> {"id": "bitcoin"}
+- generate_chart(data) -> {"type":"bar", "labels":["A","B"], "values":[10,20]}
+- get_pokemon(name) -> {"name": "pikachu"}
+- get_country(name) -> {"name": "india"}
 
-TOOLS:
-- get_wiki(topic) -> Returns info and IMAGE.
-- get_weather(city)
-- get_pokemon(name) -> Returns IMAGE.
-- get_country(name) -> Returns IMAGE.
-- generate_chart(type, labels, data) -> Creates a chart.
+### EXAMPLES ###
+
+User: Make a chart of numbers 1 to 5 in roman.
+Assistant: ACTION: generate_chart ARGS: {"type":"bar", "labels":["I","II","III","IV","V"], "values":[1,2,3,4,5]}
+
+User: Create a chart of scientists with photos.
+Assistant: ACTION: get_wiki ARGS: {"topic": "Albert Einstein"}
+
+User: Aap kaise ho?
+Assistant: Main bilkul badhiya hoon! Aap sunaiye, ${OPENSKY_CONFIG.agent_name} aapki kaise madad kar sakta hai?
 `;
 
 const conversationHistory = [];
@@ -73,61 +78,68 @@ let animationFrameId = null;
 // 3. TOOLS
 // ==========================================
 const Tools = {
-    get_wiki: async (topic) => {
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
-        const d = await res.json();
-        return { text: d.extract, image: d.thumbnail?.source };
-    },
-    get_weather: async (city) => {
+    get_weather: async (args) => {
+        const city = args.city;
         const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}`)).json();
         if(!geo.results?.[0]) return { text: "City not found" };
         const { latitude, longitude, name } = geo.results[0];
         const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
         return { text: `Weather in ${name}: ${w.current_weather.temperature}°C` };
     },
-    get_pokemon: async (name) => {
-        try {
-            const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
-            const d = await res.json();
-            return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
-        } catch { return { text: "Pokemon not found" }; }
+    get_wiki: async (args) => {
+        const topic = args.topic;
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
+        const d = await res.json();
+        return { text: d.extract, image: d.thumbnail?.source };
     },
-    get_country: async (name) => {
-        try {
-            const res = await fetch(`https://restcountries.com/v3.1/name/${name}`);
-            const d = await res.json();
-            return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
-        } catch { return { text: "Country not found" }; }
-    },
-    get_crypto: async (id) => {
+    get_crypto: async (args) => {
+        const id = args.id;
         const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
         const d = await res.json();
         if(d[id]) return { text: `${id} is $${d[id].usd}` };
         return { text: "Coin not found" };
     },
     generate_chart: async (args) => {
+        // We return a special object that the UI will intercept
+        return { 
+            text: "Chart generated.", 
+            chart: { 
+                type: args.type || 'bar', 
+                labels: args.labels, 
+                values: args.values 
+            } 
+        };
+    },
+    get_pokemon: async (args) => {
         try {
-            const parts = args.match(/(\w+),\s*(\[.*?\]),\s*(\[.*?\])/i);
-            if(!parts) return { text: "Invalid chart format." };
-            
-            return { 
-                text: "Chart generated.", 
-                chart: {
-                    type: parts[1],
-                    labels: JSON.parse(parts[2]),
-                    data: JSON.parse(parts[3])
-                }
-            };
-        } catch(e) {
-            return { text: "Chart error: " + e.message };
-        }
+            const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${args.name.toLowerCase()}`);
+            const d = await res.json();
+            return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
+        } catch { return { text: "Pokemon not found" }; }
+    },
+    get_country: async (args) => {
+        try {
+            const res = await fetch(`https://restcountries.com/v3.1/name/${args.name}`);
+            const d = await res.json();
+            return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
+        } catch { return { text: "Country not found" }; }
     }
 };
 
+// Robust Parser: Finds JSON even if surrounded by text
 function parseToolAction(text) {
-    const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([^\n]+)/i);
-    if (!match) return null;
-    return { name: match[1].toLowerCase(), args: match[2].trim() };
+    // 1. Try strict format first: ACTION: name ARGS: {...}
+    const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([\s\S]+)/i);
+    if (match) {
+        try {
+            // Try to extract valid JSON from the arguments part
+            const jsonMatch = match[2].match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                return { name: match[1].toLowerCase(), args: JSON.parse(jsonMatch[0]) };
+            }
+        } catch (e) { console.log("Parse error", e); }
+    }
+    return null;
 }
 
 // ==========================================
@@ -173,6 +185,7 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
+        // Reset History if needed
         while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
         let messages = [
@@ -190,11 +203,13 @@ async function runAgentLoop(query) {
 
             const completion = await agentEngine.chat.completions.create({
                 messages: messages, 
-                temperature: 0.05, 
+                temperature: 0.1, 
                 stream: true
             });
 
             let currentChunk = "";
+            
+            // Smooth Text Node Strategy
             let textNode = document.createTextNode("");
             content.appendChild(textNode);
 
@@ -212,8 +227,10 @@ async function runAgentLoop(query) {
 
             if (forceStop) break;
 
+            // Render Markdown
             parseAndRender(finalResponse, content);
 
+            // Check for Tool
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
                 statusText.textContent = "Running Tool...";
@@ -221,12 +238,15 @@ async function runAgentLoop(query) {
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
                 
+                // Visualize Result
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
                 
+                // Handle Images
                 if (result.image) {
                     resultHtml += `<img src="${result.image}" alt="img" style="max-width:100%; border-radius:8px; margin-top:8px; display:block;">`;
                 }
                 
+                // Handle Charts
                 if (result.chart) {
                     const chartId = 'chart_' + Math.random().toString(36).substr(2, 9);
                     resultHtml += `<div style="height:250px; margin-top:10px;"><canvas id="${chartId}"></canvas></div>`;
@@ -234,7 +254,7 @@ async function runAgentLoop(query) {
                         const ctx = document.getElementById(chartId);
                         if(ctx) new Chart(ctx, { 
                             type: result.chart.type || 'bar', 
-                            data: { labels: result.chart.labels, datasets: [{ label: 'Data', data: result.chart.data, borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.1)' }] },
+                            data: { labels: result.chart.labels, datasets: [{ label: 'Data', data: result.chart.values, borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.1)' }] },
                             options: { responsive: true, maintainAspectRatio: false }
                         });
                     }, 100);
@@ -242,19 +262,19 @@ async function runAgentLoop(query) {
 
                 content.innerHTML += resultHtml;
                 
+                // Feed back to model
                 messages.push({ role: "assistant", content: currentChunk });
-                messages.push({ role: "user", content: `Observation: ${result.text}. Answer now.` });
+                messages.push({ role: "user", content: `System Notification: Tool executed successfully. Result: ${result.text}. Now answer the user.` });
                 
                 finalResponse = ""; 
                 loops++;
             } else {
-                break; 
+                break; // No tool, done
             }
         }
 
         conversationHistory.push({ role: "user", content: query });
         conversationHistory.push({ role: "assistant", content: finalResponse });
-
         status.style.display = 'none';
 
     } catch (e) {
@@ -273,9 +293,12 @@ async function runAgentLoop(query) {
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    
+    // Basic Markdown
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
         `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`
     );
+    
     container.innerHTML = html.replace(/\n/g, '<br>');
 }
 
@@ -310,9 +333,7 @@ async function init() {
         targetProgress = 0;
         animationFrameId = requestAnimationFrame(animateProgress);
 
-        // Load Model WITHOUT custom config (fixes Fetch error)
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
-            // NO appConfig needed - uses default registry
             initProgressCallback: (report) => {
                 targetProgress = report.progress * 100;
                 document.getElementById('status-agent').textContent = report.text;
@@ -345,17 +366,19 @@ async function init() {
 
 async function handleAction() {
     if (isGenerating) {
-        isGenerating = false;
+        // FIX: Robust Stop Logic
+        isGenerating = false; 
         sendBtn.classList.remove('stop-btn');
-        sendBtn.innerHTML = `Stopping...`;
         
         if(agentEngine) {
-            await agentEngine.interruptGenerate();
-            // Critical fix for Qwen: Reset chat state after stop
-            await agentEngine.resetChat(); 
+            try {
+                await agentEngine.interruptGenerate();
+                // CRITICAL: Reset chat to ensure clean state for next message
+                await agentEngine.resetChat(); 
+            } catch(e) {
+                console.log("Interrupt error", e);
+            }
         }
-        
-        sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
         return;
     }
 
