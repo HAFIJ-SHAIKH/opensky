@@ -8,40 +8,36 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Qwen2.5-7B-Instruct
-// Much smarter than 1.5B. Perfect logic and Hinglish.
-// Needs ~5GB VRAM.
+// MODEL: Llama-3.2-3B-Instruct
+// Pros: Extremely smart, great logic, very stable.
+// Cons: Hinglish is good but not native (we force it in prompt).
 const AGENT_MODEL = {
-    id: "Qwen2.5-7B-Instruct-q4f16_1-MLC",
+    id: "Llama-3.2-3B-Instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Tuned for the smarter model
+// SYSTEM PROMPT: Forcing Llama to speak Hinglish
 const SYSTEM_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You are a brilliant assistant who speaks fluent Hinglish and English.
+You are a smart assistant who speaks fluent Hinglish (Hindi + English mix).
 
-### STRICT RULES ###
-1. Never repeat the user's question.
-2. Use tools ONLY when necessary (Weather, Wiki, Charts, Search).
-3. If using a tool, STOP generating text immediately after the ACTION line.
+### LANGUAGE RULES (CRITICAL) ###
+- You MUST speak in Hinglish.
+- Style: "Yaar, kya scene hai?", "Main hoon na help karne ke liye."
+- Use Hindi words written in English script (Transliteration).
+- Example User: "Kya ho raha hai?" -> Example You: "Kuch nahi yaar, bas chill maaro."
 
-TOOL FORMAT:
-ACTION: tool_name ARGS: json_data
+### TOOL RULES ###
+- Use tools for: Weather, Wiki, Charts, Photos.
+- Format: ACTION: tool_name ARGS: {"arg": "value"}
+- Stop text immediately after calling a tool.
 
-AVAILABLE TOOLS:
-- get_wiki(topic) -> Get info and photo.
-- get_weather(city) -> Get temperature.
-- create_profile_chart(items) -> Visual cards for people/photos.
-- create_comparison(i1, i2) -> Compare two things.
-- create_timeline(events) -> Timeline of events.
-- generate_qr_code(text) -> QR Code.
-- translate_text(text, lang) -> Translate.
-- convert_currency(amt, from, to) -> Money conversion.
-- get_random_quote() -> Inspirational quote.
-- create_flashcards(topic, cards) -> Study cards.
-- get_crypto(id) -> Crypto price.
-- search_image(query) -> Find an image.
+TOOLS:
+- get_wiki(topic) -> Info & Photo.
+- create_profile_chart(items) -> Photo Cards.
+- get_weather(city) -> Temperature.
+- search_image(query) -> Photos.
+- generate_qr_code(text) -> QR.
 `;
 
 const conversationHistory = [];
@@ -60,17 +56,16 @@ const loadingPercent = document.getElementById('loadingPercent');
 const loadingLabel = document.getElementById('loadingLabel');
 const modelStatusContainer = document.getElementById('modelStatusContainer');
 const debugLog = document.getElementById('debugLog');
+const clearBtn = document.getElementById('clearBtn');
 
 let agentEngine = null;
 let isGenerating = false;
-
-// Smooth Progress
 let currentProgress = 0;
 let targetProgress = 0;
 let animationFrameId = null;
 
 // ==========================================
-// 3. TOOLS (13 Total)
+// 3. TOOLS
 // ==========================================
 const Tools = {
     get_wiki: async (args) => {
@@ -81,7 +76,7 @@ const Tools = {
     get_weather: async (args) => {
         const city = args.city;
         const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}`)).json();
-        if(!geo.results?.[0]) return { text: "City not found" };
+        if(!geo.results?.[0]) return { text: "City nahi mili" };
         const { latitude, longitude, name } = geo.results[0];
         const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
         return { text: `Weather in ${name}: ${w.current_weather.temperature}°C` };
@@ -89,50 +84,20 @@ const Tools = {
     create_profile_chart: async (args) => {
         return { text: "Profiles created.", profile: args.items };
     },
-    create_comparison: async (args) => {
-        return { text: "Comparison created.", comparison: { item1: args.item1, item2: args.item2 } };
-    },
-    create_timeline: async (args) => {
-        return { text: "Timeline created.", timeline: args.events };
+    search_image: async (args) => {
+        const res = await fetch(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(args.query)}`);
+        const d = await res.json();
+        if(d.results && d.results[0]) return { text: "Image found.", image: d.results[0].url };
+        return { text: "Image nahi mila." };
     },
     generate_qr_code: async (args) => {
         const text = args.text || "https://google.com";
-        return { text: "QR Code generated.", qr: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(text)}` };
-    },
-    translate_text: async (args) => {
-        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(args.text)}&langpair=en|${args.target_lang || 'hi'}`);
-        const d = await res.json();
-        return { text: d.responseData.translatedText };
-    },
-    convert_currency: async (args) => {
-        const { amount, from, to } = args;
-        const res = await fetch(`https://open.er-api.com/v6/latest/${from}`);
-        const d = await res.json();
-        if(d.rates && d.rates[to]) {
-            const val = (amount * d.rates[to]).toFixed(2);
-            return { text: `${amount} ${from} = ${val} ${to}` };
-        }
-        return { text: "Could not convert." };
+        return { text: "QR Ready.", qr: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(text)}` };
     },
     get_random_quote: async () => {
         const res = await fetch("https://api.quotable.io/random");
         const d = await res.json();
         return { text: `"${d.content}" - ${d.author}` };
-    },
-    create_flashcards: async (args) => {
-        return { text: "Flashcards created.", flashcards: args.cards };
-    },
-    get_crypto: async (args) => {
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${args.id}&vs_currencies=usd`);
-        const d = await res.json();
-        if(d[args.id]) return { text: `${args.id} is $${d[args.id].usd}` };
-        return { text: "Coin not found" };
-    },
-    search_image: async (args) => {
-        const res = await fetch(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(args.query)}`);
-        const d = await res.json();
-        if(d.results && d.results[0]) return { text: "Image found.", image: d.results[0].url };
-        return { text: "No image found." };
     }
 };
 
@@ -141,16 +106,14 @@ function parseToolAction(text) {
     if (match) {
         try {
             const jsonMatch = match[2].match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                return { name: match[1].toLowerCase(), args: JSON.parse(jsonMatch[0]) };
-            }
+            if (jsonMatch) return { name: match[1].toLowerCase(), args: JSON.parse(jsonMatch[0]) };
         } catch (e) { console.log("Parse Error", e); }
     }
     return null;
 }
 
 // ==========================================
-// 4. SMOOTH LOADING
+// 4. LOGIC
 // ==========================================
 function animateProgress() {
     const diff = targetProgress - currentProgress;
@@ -162,9 +125,6 @@ function animateProgress() {
     animationFrameId = requestAnimationFrame(animateProgress);
 }
 
-// ==========================================
-// 5. LOGIC
-// ==========================================
 function smartScroll() { messagesArea.scrollTop = messagesArea.scrollHeight; }
 
 function createMessageDiv() {
@@ -198,12 +158,12 @@ async function runAgentLoop(query) {
         let finalResponse = "";
         let loops = 0;
 
-        while (loops < 10) { 
+        while (loops < 5) { 
             if (!isGenerating) break;
 
             const completion = await agentEngine.chat.completions.create({
                 messages: messages, 
-                temperature: 0.3, 
+                temperature: 0.7, // Higher temp for creative Hinglish
                 stream: true
             });
 
@@ -223,19 +183,16 @@ async function runAgentLoop(query) {
             }
 
             if (!isGenerating) break;
-            
             parseAndRender(finalResponse, content);
 
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
-                statusText.textContent = "Running Tool...";
+                statusText.textContent = "Tool Chal raha hai...";
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
                 
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
-                
                 if (result.image) resultHtml += `<img src="${result.image}" style="max-width:100%; border-radius:8px; margin-top:5px;">`;
-                
                 if (result.profile) {
                     resultHtml += `<div class="profile-grid">`;
                     result.profile.forEach(p => {
@@ -243,28 +200,12 @@ async function runAgentLoop(query) {
                     });
                     resultHtml += `</div>`;
                 }
-                if (result.comparison) {
-                    const i1 = result.comparison.item1; const i2 = result.comparison.item2;
-                    resultHtml += `<table class="comparison-table"><tr><th>Feature</th><th>${i1.name}</th><th>${i2.name}</th></tr>`;
-                    resultHtml += `<tr><td>Info</td><td>${i1.desc || 'N/A'}</td><td>${i2.desc || 'N/A'}</td></tr>`;
-                    resultHtml += `</table>`;
-                }
-                if (result.timeline) {
-                    resultHtml += `<div class="timeline-container">`;
-                    result.timeline.forEach(e => { resultHtml += `<div class="timeline-item"><div class="timeline-date">${e.date}</div><div class="timeline-content">${e.event}</div></div>`; });
-                    resultHtml += `</div>`;
-                }
-                if (result.qr) resultHtml += `<div class="qr-container"><img src="${result.qr}" alt="QR Code"></div>`;
-                if (result.flashcards) {
-                    resultHtml += `<div class="flashcard-grid">`;
-                    result.flashcards.forEach(c => { resultHtml += `<div class="flashcard"><div class="flashcard-q">${c.q}</div><div class="flashcard-a">${c.a}</div></div>`; });
-                    resultHtml += `</div>`;
-                }
+                if (result.qr) resultHtml += `<div class="qr-container"><img src="${result.qr}"></div>`;
 
                 content.innerHTML += resultHtml;
                 
                 messages.push({ role: "assistant", content: currentChunk });
-                messages.push({ role: "user", content: `System: Tool Success. Result: ${result.text}. Continue.` });
+                messages.push({ role: "user", content: `System: Tool Success. ${result.text}. Continue.` });
                 
                 finalResponse = ""; 
                 loops++;
@@ -289,7 +230,7 @@ async function runAgentLoop(query) {
 }
 
 // ==========================================
-// 6. RENDERER
+// 5. RENDERER & INIT
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -304,26 +245,17 @@ window.copyCode = (btn) => {
     btn.textContent = 'Copied';
 };
 
-// ==========================================
-// 7. INITIALIZATION
-// ==========================================
 function showError(t, e) { 
     debugLog.style.display = 'block'; 
     debugLog.innerHTML = `${t}: ${e.message}`; 
-    console.error(e);
 }
 
 async function init() {
     try {
-        loadingLabel.textContent = "Initializing...";
+        loadingLabel.textContent = "Checking WebGPU...";
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
 
-        modelStatusContainer.innerHTML = `
-          <div class="model-card">
-            <div class="model-card-name">${AGENT_MODEL.name}</div>
-            <div class="model-card-desc" id="status-agent">Waiting...</div>
-          </div>
-        `;
+        modelStatusContainer.innerHTML = `<div class="model-card"><div class="model-card-name">${AGENT_MODEL.name}</div><div class="model-card-desc" id="status-agent">Waiting...</div></div>`;
 
         cancelAnimationFrame(animationFrameId);
         currentProgress = 0; targetProgress = 0;
@@ -356,7 +288,7 @@ async function init() {
 }
 
 // ==========================================
-// 8. EVENTS
+// 6. EVENTS
 // ==========================================
 async function handleAction() {
     if (isGenerating) {
@@ -389,6 +321,12 @@ async function handleAction() {
     smartScroll();
     await runAgentLoop(text);
 }
+
+clearBtn.onclick = () => {
+    conversationHistory.length = 0;
+    messagesArea.innerHTML = '';
+    if(agentEngine) agentEngine.resetChat();
+};
 
 inputText.oninput = function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px'; };
 inputText.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAction(); } };
