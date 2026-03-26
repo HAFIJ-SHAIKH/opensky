@@ -8,42 +8,44 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
+// MODEL: Qwen2.5-7B-Instruct
+// Much smarter than 1.5B. Perfect logic and Hinglish.
+// Needs ~5GB VRAM.
 const AGENT_MODEL = {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    id: "Qwen2.5-7B-Instruct-q4f16_1-MLC",
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Fixed Repetition Issue
+// SYSTEM PROMPT: Tuned for the smarter model
 const SYSTEM_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You speak Hinglish and English naturally.
+You are a brilliant assistant who speaks fluent Hinglish and English.
 
 ### STRICT RULES ###
-1. NEVER repeat the user's question.
-2. Answer directly and concisely.
-3. If you use a tool, stop immediately.
+1. Never repeat the user's question.
+2. Use tools ONLY when necessary (Weather, Wiki, Charts, Search).
+3. If using a tool, STOP generating text immediately after the ACTION line.
 
-### TOOLS ###
-Use tools for data, images, or charts.
-FORMAT: ACTION: tool_name ARGS: json_data
+TOOL FORMAT:
+ACTION: tool_name ARGS: json_data
 
 AVAILABLE TOOLS:
-- get_wiki(topic)
-- get_weather(city)
-- create_profile_chart(items) -> Used for lists of people/photos.
-- create_comparison(i1, i2)
-- create_timeline(events)
-- generate_qr_code(text)
-- translate_text(text, lang)
-- convert_currency(amt, from, to)
-- get_random_quote()
-- create_flashcards(topic, cards)
-- get_crypto(id)
-- search_image(query)
+- get_wiki(topic) -> Get info and photo.
+- get_weather(city) -> Get temperature.
+- create_profile_chart(items) -> Visual cards for people/photos.
+- create_comparison(i1, i2) -> Compare two things.
+- create_timeline(events) -> Timeline of events.
+- generate_qr_code(text) -> QR Code.
+- translate_text(text, lang) -> Translate.
+- convert_currency(amt, from, to) -> Money conversion.
+- get_random_quote() -> Inspirational quote.
+- create_flashcards(topic, cards) -> Study cards.
+- get_crypto(id) -> Crypto price.
+- search_image(query) -> Find an image.
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 6; // Short history to prevent confusion
+const MAX_HISTORY = 10; 
 
 // ==========================================
 // 2. DOM & STATE
@@ -185,7 +187,6 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // Hard limit history
         while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
         let messages = [
@@ -202,7 +203,7 @@ async function runAgentLoop(query) {
 
             const completion = await agentEngine.chat.completions.create({
                 messages: messages, 
-                temperature: 0.3, // Higher temp for better Hinglish flow
+                temperature: 0.3, 
                 stream: true
             });
 
@@ -223,7 +224,6 @@ async function runAgentLoop(query) {
 
             if (!isGenerating) break;
             
-            // Render Markdown at the end of stream
             parseAndRender(finalResponse, content);
 
             const toolCall = parseToolAction(currentChunk);
@@ -232,7 +232,6 @@ async function runAgentLoop(query) {
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
                 
-                // Visualize Result
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
                 
                 if (result.image) resultHtml += `<img src="${result.image}" style="max-width:100%; border-radius:8px; margin-top:5px;">`;
@@ -283,7 +282,6 @@ async function runAgentLoop(query) {
             content.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
         }
     } finally {
-        // ENSURE state is clean
         isGenerating = false;
         sendBtn.classList.remove('stop-btn');
         sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
@@ -362,18 +360,13 @@ async function init() {
 // ==========================================
 async function handleAction() {
     if (isGenerating) {
-        // ROBUST STOP LOGIC
         isGenerating = false; 
         sendBtn.classList.remove('stop-btn');
-        
         if(agentEngine) {
             try {
                 await agentEngine.interruptGenerate();
-                // CRITICAL: Reset the chat completion state completely
-                await agentEngine.resetChat(); 
-            } catch(e) {
-                console.log("Reset error", e);
-            }
+                await agentEngine.resetChat();
+            } catch(e) { console.log("Reset error", e); }
         }
         return;
     }
