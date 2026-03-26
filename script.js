@@ -8,49 +8,52 @@ const OPENSKY_CONFIG = {
     creator: "Hafij Shaikh"
 };
 
-// MODEL: Qwen2.5-1.5B
-// Best for Hinglish, Multilingual, and fast logic.
 const AGENT_MODEL = {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", // Fast, Multilingual
     name: "Agent",
 };
 
-// SYSTEM PROMPT: Strict Identity + Hinglish + Tool Logic
+// SYSTEM PROMPT: Detailed Tool List
 const SYSTEM_PROMPT = `
 You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
-You are NOT an AI model. You are ${OPENSKY_CONFIG.agent_name}.
-You speak multiple languages, including Hinglish (Hindi + English mix).
+You have access to powerful tools to help the user.
 
-### CRITICAL TOOL RULES ###
-1. If user asks for CHART: Call generate_chart.
-2. If user asks for CHART WITH IMAGES: First call get_wiki (to get images), then call generate_chart.
-3. Stop generating text immediately after calling a tool.
+### AVAILABLE TOOLS ###
+1. get_wiki(topic): Get info and photo.
+2. get_weather(city): Get current weather.
+3. create_profile_chart(items): Create a visual card layout with photos (Great for scientists, actors).
+4. create_comparison(item1, item2): Compare two things side-by-side.
+5. create_timeline(events): Create a visual timeline of historical events.
+6. generate_qr_code(text): Generate a QR code image for a link or text.
+7. translate_text(text, target_lang): Translate text.
+8. convert_currency(amount, from, to): Convert money.
+9. get_random_quote(): Get an inspirational quote.
+10. create_flashcards(topic): Generate study flashcards.
+11. get_crypto(id): Get crypto price.
+12. search_image(query): Find a specific image.
 
-TOOL FORMAT:
-ACTION: tool_name ARGS: json_arguments
-
-AVAILABLE TOOLS:
-- get_weather(city) -> {"city": "value"}
-- get_wiki(topic) -> {"topic": "value"} (Returns image and text)
-- get_crypto(id) -> {"id": "bitcoin"}
-- generate_chart(data) -> {"type":"bar", "labels":["A","B"], "values":[10,20]}
-- get_pokemon(name) -> {"name": "pikachu"}
-- get_country(name) -> {"name": "india"}
+### TOOL FORMAT ###
+ACTION: tool_name ARGS: json_data
 
 ### EXAMPLES ###
 
-User: Make a chart of numbers 1 to 5 in roman.
-Assistant: ACTION: generate_chart ARGS: {"type":"bar", "labels":["I","II","III","IV","V"], "values":[1,2,3,4,5]}
+User: Compare Einstein and Newton.
+Assistant: ACTION: create_comparison ARGS: {"item1": "Albert Einstein", "item2": "Isaac Newton"}
 
-User: Create a chart of scientists with photos.
+User: Show me a timeline of WW2.
+Assistant: ACTION: create_timeline ARGS: {"events": [{"date":"1939", "event":"War Starts"}, {"date":"1945", "event":"War Ends"}]}
+
+User: Make flashcards for capitals.
+Assistant: ACTION: create_flashcards ARGS: {"topic": "Capitals", "cards": [{"q":"France?", "a":"Paris"}, {"q":"Japan?", "a":"Tokyo"}]}
+
+User: Scientists with photos.
 Assistant: ACTION: get_wiki ARGS: {"topic": "Albert Einstein"}
-
-User: Aap kaise ho?
-Assistant: Main bilkul badhiya hoon! Aap sunaiye, ${OPENSKY_CONFIG.agent_name} aapki kaise madad kar sakta hai?
+(Observation: Got image)
+ACTION: create_profile_chart ARGS: {"items": [{"name":"Albert Einstein", "image":"URL", "desc":"Physicist"}]}
 `;
 
 const conversationHistory = [];
-const MAX_HISTORY = 12; 
+const MAX_HISTORY = 10; 
 
 // ==========================================
 // 2. DOM & STATE
@@ -68,16 +71,21 @@ const debugLog = document.getElementById('debugLog');
 
 let agentEngine = null;
 let isGenerating = false;
-
-// Smooth Progress
 let currentProgress = 0;
 let targetProgress = 0;
 let animationFrameId = null;
 
 // ==========================================
-// 3. TOOLS
+// 3. TOOLS (13 Total)
 // ==========================================
 const Tools = {
+    // 1. Wiki
+    get_wiki: async (args) => {
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(args.topic)}`);
+        const d = await res.json();
+        return { text: d.extract, image: d.thumbnail?.source };
+    },
+    // 2. Weather
     get_weather: async (args) => {
         const city = args.city;
         const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}`)).json();
@@ -86,64 +94,85 @@ const Tools = {
         const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
         return { text: `Weather in ${name}: ${w.current_weather.temperature}°C` };
     },
-    get_wiki: async (args) => {
-        const topic = args.topic;
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
-        const d = await res.json();
-        return { text: d.extract, image: d.thumbnail?.source };
+    // 3. Profile Chart (Photos)
+    create_profile_chart: async (args) => {
+        return { text: "Profiles created.", profile: args.items };
     },
-    get_crypto: async (args) => {
-        const id = args.id;
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+    // 4. Comparison
+    create_comparison: async (args) => {
+        return { text: "Comparison created.", comparison: { item1: args.item1, item2: args.item2 } };
+    },
+    // 5. Timeline
+    create_timeline: async (args) => {
+        return { text: "Timeline created.", timeline: args.events };
+    },
+    // 6. QR Code
+    generate_qr_code: async (args) => {
+        const text = args.text || "https://google.com";
+        return { text: "QR Code generated.", qr: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(text)}` };
+    },
+    // 7. Translate
+    translate_text: async (args) => {
+        const text = args.text;
+        const lang = args.target_lang || "en";
+        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`);
         const d = await res.json();
-        if(d[id]) return { text: `${id} is $${d[id].usd}` };
+        return { text: d.responseData.translatedText };
+    },
+    // 8. Currency
+    convert_currency: async (args) => {
+        const { amount, from, to } = args;
+        const res = await fetch(`https://open.er-api.com/v6/latest/${from}`);
+        const d = await res.json();
+        if(d.rates && d.rates[to]) {
+            const val = (amount * d.rates[to]).toFixed(2);
+            return { text: `${amount} ${from} = ${val} ${to}` };
+        }
+        return { text: "Could not convert." };
+    },
+    // 9. Random Quote
+    get_random_quote: async () => {
+        const res = await fetch("https://api.quotable.io/random");
+        const d = await res.json();
+        return { text: `"${d.content}" - ${d.author}` };
+    },
+    // 10. Flashcards
+    create_flashcards: async (args) => {
+        return { text: "Flashcards created.", flashcards: args.cards };
+    },
+    // 11. Crypto
+    get_crypto: async (args) => {
+        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${args.id}&vs_currencies=usd`);
+        const d = await res.json();
+        if(d[args.id]) return { text: `${args.id} is $${d[args.id].usd}` };
         return { text: "Coin not found" };
     },
-    generate_chart: async (args) => {
-        // We return a special object that the UI will intercept
-        return { 
-            text: "Chart generated.", 
-            chart: { 
-                type: args.type || 'bar', 
-                labels: args.labels, 
-                values: args.values 
-            } 
-        };
-    },
-    get_pokemon: async (args) => {
-        try {
-            const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${args.name.toLowerCase()}`);
-            const d = await res.json();
-            return { text: `#${d.id} ${d.name}`, image: d.sprites?.front_default };
-        } catch { return { text: "Pokemon not found" }; }
-    },
-    get_country: async (args) => {
-        try {
-            const res = await fetch(`https://restcountries.com/v3.1/name/${args.name}`);
-            const d = await res.json();
-            return { text: `${d[0].name.common}, Capital: ${d[0].capital}`, image: d[0].flags?.svg };
-        } catch { return { text: "Country not found" }; }
+    // 12. Image Search (OpenVerse)
+    search_image: async (args) => {
+        const res = await fetch(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(args.query)}`);
+        const d = await res.json();
+        if(d.results && d.results[0]) {
+             return { text: "Image found.", image: d.results[0].url };
+        }
+        return { text: "No image found." };
     }
 };
 
-// Robust Parser: Finds JSON even if surrounded by text
 function parseToolAction(text) {
-    // 1. Try strict format first: ACTION: name ARGS: {...}
     const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([\s\S]+)/i);
     if (match) {
         try {
-            // Try to extract valid JSON from the arguments part
             const jsonMatch = match[2].match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 return { name: match[1].toLowerCase(), args: JSON.parse(jsonMatch[0]) };
             }
-        } catch (e) { console.log("Parse error", e); }
+        } catch (e) { console.log("Parse Error", e); }
     }
     return null;
 }
 
 // ==========================================
-// 4. SMOOTH LOADING ANIMATION
+// 4. SMOOTH LOADING
 // ==========================================
 function animateProgress() {
     const diff = targetProgress - currentProgress;
@@ -158,25 +187,20 @@ function animateProgress() {
 // ==========================================
 // 5. LOGIC
 // ==========================================
-
 function smartScroll() { messagesArea.scrollTop = messagesArea.scrollHeight; }
 
 function createMessageDiv() {
     const msgDiv = document.createElement('div');
     msgDiv.className = 'message assistant';
-    
     const status = document.createElement('div');
     status.className = 'agent-status';
     status.innerHTML = `<span class="agent-status-dot"></span><span class="status-text">Thinking...</span>`;
-    
     const content = document.createElement('div');
     content.className = 'assistant-content';
-
     msgDiv.appendChild(status);
     msgDiv.appendChild(content);
     messagesArea.appendChild(msgDiv);
     smartScroll();
-    
     return { msgDiv, content, status };
 }
 
@@ -185,7 +209,6 @@ async function runAgentLoop(query) {
     const statusText = status.querySelector('.status-text');
 
     try {
-        // Reset History if needed
         while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
         let messages = [
@@ -198,24 +221,19 @@ async function runAgentLoop(query) {
         let loops = 0;
         let forceStop = false;
 
-        while (loops < 5 && !forceStop) { 
+        while (loops < 10 && !forceStop) {
             if (!isGenerating) { forceStop = true; break; }
 
             const completion = await agentEngine.chat.completions.create({
-                messages: messages, 
-                temperature: 0.1, 
-                stream: true
+                messages: messages, temperature: 0.1, stream: true
             });
 
             let currentChunk = "";
-            
-            // Smooth Text Node Strategy
             let textNode = document.createTextNode("");
             content.appendChild(textNode);
 
             for await (const chunk of completion) {
                 if (!isGenerating) { forceStop = true; break; }
-                
                 const delta = chunk.choices[0].delta.content;
                 if (delta) {
                     currentChunk += delta;
@@ -226,50 +244,74 @@ async function runAgentLoop(query) {
             }
 
             if (forceStop) break;
-
-            // Render Markdown
             parseAndRender(finalResponse, content);
 
-            // Check for Tool
             const toolCall = parseToolAction(currentChunk);
             if (toolCall) {
                 statusText.textContent = "Running Tool...";
-                
                 let result = { text: "Error" };
                 if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
                 
                 // Visualize Result
                 let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
                 
-                // Handle Images
-                if (result.image) {
-                    resultHtml += `<img src="${result.image}" alt="img" style="max-width:100%; border-radius:8px; margin-top:8px; display:block;">`;
-                }
+                // 1. Images (Wiki/Search)
+                if (result.image) resultHtml += `<img src="${result.image}" style="max-width:100%; border-radius:8px; margin-top:5px;">`;
                 
-                // Handle Charts
-                if (result.chart) {
-                    const chartId = 'chart_' + Math.random().toString(36).substr(2, 9);
-                    resultHtml += `<div style="height:250px; margin-top:10px;"><canvas id="${chartId}"></canvas></div>`;
-                    setTimeout(() => {
-                        const ctx = document.getElementById(chartId);
-                        if(ctx) new Chart(ctx, { 
-                            type: result.chart.type || 'bar', 
-                            data: { labels: result.chart.labels, datasets: [{ label: 'Data', data: result.chart.values, borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.1)' }] },
-                            options: { responsive: true, maintainAspectRatio: false }
-                        });
-                    }, 100);
+                // 2. Profile Chart
+                if (result.profile) {
+                    resultHtml += `<div class="profile-grid">`;
+                    result.profile.forEach(p => {
+                        resultHtml += `<div class="profile-card">
+                            <img src="${p.image}" class="profile-img">
+                            <div class="profile-info"><h3>${p.name}</h3><p>${p.desc || ''}</p></div>
+                        </div>`;
+                    });
+                    resultHtml += `</div>`;
+                }
+
+                // 3. Comparison
+                if (result.comparison) {
+                    const i1 = result.comparison.item1;
+                    const i2 = result.comparison.item2;
+                    resultHtml += `<table class="comparison-table"><tr><th>Feature</th><th>${i1.name}</th><th>${i2.name}</th></tr>`;
+                    // Simple mock comparison logic
+                    resultHtml += `<tr><td>Data</td><td>${i1.desc || 'N/A'}</td><td>${i2.desc || 'N/A'}</td></tr>`;
+                    resultHtml += `</table>`;
+                }
+
+                // 4. Timeline
+                if (result.timeline) {
+                    resultHtml += `<div class="timeline-container">`;
+                    result.timeline.forEach(e => {
+                        resultHtml += `<div class="timeline-item"><div class="timeline-date">${e.date}</div><div class="timeline-content">${e.event}</div></div>`;
+                    });
+                    resultHtml += `</div>`;
+                }
+
+                // 5. QR Code
+                if (result.qr) {
+                    resultHtml += `<div class="qr-container"><img src="${result.qr}" alt="QR Code"></div>`;
+                }
+
+                // 6. Flashcards
+                if (result.flashcards) {
+                    resultHtml += `<div class="flashcard-grid">`;
+                    result.flashcards.forEach(c => {
+                        resultHtml += `<div class="flashcard"><div class="flashcard-q">${c.q}</div><div class="flashcard-a">${c.a}</div></div>`;
+                    });
+                    resultHtml += `</div>`;
                 }
 
                 content.innerHTML += resultHtml;
                 
-                // Feed back to model
                 messages.push({ role: "assistant", content: currentChunk });
-                messages.push({ role: "user", content: `System Notification: Tool executed successfully. Result: ${result.text}. Now answer the user.` });
+                messages.push({ role: "user", content: `System: Tool Success. Result: ${result.text}. Continue.` });
                 
                 finalResponse = ""; 
                 loops++;
             } else {
-                break; // No tool, done
+                break; 
             }
         }
 
@@ -293,12 +335,9 @@ async function runAgentLoop(query) {
 // ==========================================
 function parseAndRender(text, container) {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    
-    // Basic Markdown
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
         `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`
     );
-    
     container.innerHTML = html.replace(/\n/g, '<br>');
 }
 
@@ -329,8 +368,7 @@ async function init() {
         `;
 
         cancelAnimationFrame(animationFrameId);
-        currentProgress = 0;
-        targetProgress = 0;
+        currentProgress = 0; targetProgress = 0;
         animationFrameId = requestAnimationFrame(animateProgress);
 
         agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
@@ -342,7 +380,6 @@ async function init() {
 
         targetProgress = 100; 
         document.getElementById('status-agent').textContent = "Ready";
-
         loadingLabel.textContent = "Ready.";
         
         setTimeout(() => {
@@ -363,21 +400,13 @@ async function init() {
 // ==========================================
 // 8. EVENTS
 // ==========================================
-
 async function handleAction() {
     if (isGenerating) {
-        // FIX: Robust Stop Logic
         isGenerating = false; 
         sendBtn.classList.remove('stop-btn');
-        
         if(agentEngine) {
-            try {
-                await agentEngine.interruptGenerate();
-                // CRITICAL: Reset chat to ensure clean state for next message
-                await agentEngine.resetChat(); 
-            } catch(e) {
-                console.log("Interrupt error", e);
-            }
+            await agentEngine.interruptGenerate();
+            await agentEngine.resetChat();
         }
         return;
     }
