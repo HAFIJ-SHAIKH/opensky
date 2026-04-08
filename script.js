@@ -345,3 +345,214 @@ if (hasUI()) {
         }
     });
 }
+// ==========================================
+// 14. FULL UI INTEGRATION (MATCH YOUR HTML)
+// ==========================================
+
+const UIX = {
+    loadingScreen: document.getElementById('loadingScreen'),
+    chatContainer: document.getElementById('chatContainer'),
+    messages: document.getElementById('messagesArea'),
+    input: document.getElementById('inputText'),
+    send: document.getElementById('sendBtn'),
+    slider: document.getElementById('sliderFill'),
+    percent: document.getElementById('loadingPercent'),
+    label: document.getElementById('loadingLabel'),
+    modelStatus: document.getElementById('modelStatusContainer'),
+    debug: document.getElementById('debugLog')
+};
+
+// SAFE CHECK
+function hasUIX() {
+    return UIX.messages && UIX.input && UIX.send;
+}
+
+// ==========================================
+// 15. LOADING PROGRESS SYSTEM
+// ==========================================
+let progress = 0;
+
+function updateProgress(val, text) {
+    if (!UIX.slider) return;
+
+    progress = val;
+    UIX.slider.style.width = val + "%";
+    UIX.percent.textContent = val.toFixed(2) + "%";
+
+    if (text && UIX.label) UIX.label.textContent = text;
+}
+
+// ==========================================
+// 16. SHOW APP
+// ==========================================
+function showApp() {
+    if (!UIX.loadingScreen || !UIX.chatContainer) return;
+
+    UIX.loadingScreen.classList.add("hidden");
+    UIX.chatContainer.classList.add("active");
+
+    if (UIX.send) UIX.send.disabled = false;
+}
+
+// ==========================================
+// 17. ENHANCED INIT (HOOK INTO EXISTING INIT)
+// ==========================================
+
+// Wrap original init safely
+const originalInit = init;
+
+init = async function () {
+    try {
+        if (UIX.label) UIX.label.textContent = "Loading Main Model...";
+
+        // MAIN MODEL WITH PROGRESS
+        State.main = await webllm.CreateMLCEngine(MAIN_MODEL.id, {
+            initProgressCallback: (r) => {
+                updateProgress(r.progress * 70, r.text);
+            }
+        });
+
+        // SUB AGENTS
+        if (UIX.label) UIX.label.textContent = "Loading Sub Agents...";
+
+        try {
+            State.sub.helper = await webllm.CreateMLCEngine(SUB_MODELS.helper, {
+                initProgressCallback: (r) => {
+                    updateProgress(70 + r.progress * 15, "Helper loading...");
+                }
+            });
+        } catch {}
+
+        try {
+            State.sub.fast = await webllm.CreateMLCEngine(SUB_MODELS.fast, {
+                initProgressCallback: (r) => {
+                    updateProgress(85 + r.progress * 15, "Fast agent loading...");
+                }
+            });
+        } catch {}
+
+        updateProgress(100, "Ready");
+
+        setTimeout(showApp, 800);
+
+    } catch (e) {
+        if (UIX.debug) {
+            UIX.debug.style.display = "block";
+            UIX.debug.innerText = e.message;
+        }
+        console.error(e);
+    }
+};
+
+// ==========================================
+// 18. SMART SCROLL (IMPROVED)
+// ==========================================
+function smartScroll() {
+    if (!UIX.messages) return;
+
+    const threshold = 120;
+    const nearBottom =
+        UIX.messages.scrollHeight - UIX.messages.scrollTop - UIX.messages.clientHeight < threshold;
+
+    if (nearBottom) {
+        UIX.messages.scrollTop = UIX.messages.scrollHeight;
+    }
+}
+
+// ==========================================
+// 19. BETTER MESSAGE UI
+// ==========================================
+function createMessageUI(type, text = "") {
+    if (!hasUIX()) return null;
+
+    const msg = document.createElement("div");
+    msg.className = `message ${type}`;
+
+    const bubble = document.createElement("div");
+    bubble.className = `${type}-bubble`;
+    bubble.innerHTML = text;
+
+    msg.appendChild(bubble);
+    UIX.messages.appendChild(msg);
+
+    smartScroll();
+    return bubble;
+}
+
+function streamUI(bubble, chunk) {
+    if (!bubble) return;
+    bubble.innerHTML += chunk;
+    smartScroll();
+}
+
+// ==========================================
+// 20. STOP / RESET SYSTEM (IMPORTANT)
+// ==========================================
+async function stopGeneration() {
+    State.generating = false;
+
+    try {
+        if (State.main) {
+            await State.main.interruptGenerate();
+            await State.main.resetChat();
+        }
+    } catch {}
+
+    if (UIX.send) {
+        UIX.send.innerHTML = "Send";
+    }
+}
+
+// ==========================================
+// 21. MAIN SEND HANDLER (UPGRADED)
+// ==========================================
+async function handleSendUI() {
+
+    if (!hasUIX()) return;
+
+    // STOP BUTTON
+    if (State.generating) {
+        await stopGeneration();
+        return;
+    }
+
+    const text = UIX.input.value.trim();
+    if (!text) return;
+
+    UIX.input.value = "";
+
+    createMessageUI("user", text);
+    const bubble = createMessageUI("assistant", "");
+
+    State.generating = true;
+
+    if (UIX.send) UIX.send.innerHTML = "Stop";
+
+    await runAgent(text, (chunk) => {
+        streamUI(bubble, chunk);
+    });
+
+    State.generating = false;
+
+    if (UIX.send) UIX.send.innerHTML = "Send";
+}
+
+// ==========================================
+// 22. EVENTS
+// ==========================================
+if (hasUIX()) {
+
+    UIX.send.onclick = handleSendUI;
+
+    UIX.input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSendUI();
+        }
+    });
+
+    UIX.input.addEventListener("input", function () {
+        this.style.height = "auto";
+        this.style.height = Math.min(this.scrollHeight, 100) + "px";
+    });
+}
