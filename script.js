@@ -1,393 +1,347 @@
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
 // ==========================================
-// 1. CONFIGURATION
+// 1. CONFIG
 // ==========================================
-const OPENSKY_CONFIG = {
+const CONFIG = {
     agent_name: "Opensky",
-    creator: "Hafij Shaikh"
+    creator: "Hafij Shaikh",
+    max_history: 10
 };
 
-const AGENT_MODEL = {
-    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
-    name: "Agent",
+// MAIN MODEL
+const MAIN_MODEL = {
+    id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"
 };
 
-// SYSTEM PROMPT: Urdu + Hindi in English Script
+// SUB AGENTS (LIGHT MODELS)
+const SUB_MODELS = {
+    helper: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+    fast: "TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC"
+};
+
+// SYSTEM PROMPT
 const SYSTEM_PROMPT = `
-You are ${OPENSKY_CONFIG.agent_name}, created by ${OPENSKY_CONFIG.creator}.
+Tum ${CONFIG.agent_name} ho, created by ${CONFIG.creator}.
+Roman Urdu + Hindi mix me baat karo.
+Friendly raho. English avoid karo.
+Tools sirf real data ke liye use karo.
 
-### LANGUAGE RULES ###
-- You MUST speak in a mix of Urdu and Hindi, written in English script (Roman Urdu).
-- Example: "Main bilkul theek hoon, aap sunaiye. Kya madad kar sakta hoon?"
-- Keep it friendly and casual.
-- Do NOT speak formal English.
-
-### TOOL RULES ###
-- Use tools ONLY for real-time data (Weather, Charts, Wiki).
-- FORMAT: ACTION: tool_name ARGS: json_data
+FORMAT:
+ACTION: tool_name ARGS: {json}
 
 TOOLS:
-- get_wiki(topic)
-- create_profile_chart(items)
-- get_weather(city)
-- generate_chart(data)
-- get_crypto(id)
+get_wiki(topic)
+get_weather(city)
+get_crypto(id)
+generate_chart(data)
+create_profile_chart(items)
 `;
 
-let conversationHistory = []; 
-const MAX_HISTORY = 10; 
+// ==========================================
+// 2. GLOBAL STATE (SAFE)
+// ==========================================
+const State = {
+    main: null,
+    sub: {},
+    history: [],
+    generating: false
+};
 
 // ==========================================
-// 2. DOM & STATE
-// ==========================================
-const loadingScreen = document.getElementById('loadingScreen');
-const chatContainer = document.getElementById('chatContainer');
-const messagesArea = document.getElementById('messagesArea');
-const inputText = document.getElementById('inputText');
-const sendBtn = document.getElementById('sendBtn');
-const sliderFill = document.getElementById('sliderFill');
-const loadingPercent = document.getElementById('loadingPercent');
-const loadingLabel = document.getElementById('loadingLabel');
-const modelStatusContainer = document.getElementById('modelStatusContainer');
-const debugLog = document.getElementById('debugLog');
-
-let agentEngine = null;
-let isGenerating = false;
-let isResetting = false; 
-
-// Smooth Progress
-let currentProgress = 0;
-let targetProgress = 0;
-let animationFrameId = null;
-
-// ==========================================
-// 3. TOOLS
+// 3. SAFE TOOL SYSTEM (MODULAR)
 // ==========================================
 const Tools = {
-    get_wiki: async (args) => {
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(args.topic)}`);
-        const d = await res.json();
-        return { text: d.extract, image: d.thumbnail?.source };
-    },
-    get_weather: async (args) => {
-        const city = args.city;
-        const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}`)).json();
-        if(!geo.results?.[0]) return { text: "Shehar nahi mila." };
-        const { latitude, longitude, name } = geo.results[0];
-        const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
-        return { text: `${name} mein temperature ${w.current_weather.temperature}°C hai.` };
-    },
-    create_profile_chart: async (args) => {
-        return { text: "Profiles ban gaye hain.", profile: args.items };
-    },
-    generate_chart: async (args) => {
-        return { 
-            text: "Chart ban gaya.", 
-            chart: { type: args.type || 'bar', labels: args.labels, values: args.values } 
-        };
-    },
-    get_crypto: async (args) => {
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${args.id}&vs_currencies=usd`);
-        const d = await res.json();
-        if(d[args.id]) return { text: `${args.id} ka price $${d[args.id].usd} hai.` };
-        return { text: "Coin nahi mila." };
-    }
-};
-
-function parseToolAction(text) {
-    const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*([\s\S]+)/i);
-    if (match) {
+    async get_wiki({ topic }) {
         try {
-            const jsonMatch = match[2].match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                return { name: match[1].toLowerCase(), args: JSON.parse(jsonMatch[0]) };
-            }
-        } catch (e) { console.log("Parse Error", e); }
-    }
-    return null;
-}
-
-// ==========================================
-// 4. SMOOTH LOADING
-// ==========================================
-function animateProgress() {
-    const diff = targetProgress - currentProgress;
-    if (Math.abs(diff) > 0.05) {
-        currentProgress += diff * 0.08; 
-        sliderFill.style.width = `${currentProgress}%`;
-        loadingPercent.textContent = `${currentProgress.toFixed(2)}%`;
-    }
-    animationFrameId = requestAnimationFrame(animateProgress);
-}
-
-// ==========================================
-// 5. LOGIC
-// ==========================================
-
-// FIX: Smart Scroll - Only scroll if user is near bottom
-function smartScroll() {
-    const threshold = 150; // Pixels from bottom
-    const isNearBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < threshold;
-    
-    if (isNearBottom) {
-        messagesArea.scrollTop = messagesArea.scrollHeight;
-    }
-}
-
-function createMessageDiv() {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message assistant';
-    const status = document.createElement('div');
-    status.className = 'agent-status';
-    status.innerHTML = `<span class="agent-status-dot"></span><span class="status-text">Soch raha hoon...</span>`;
-    const content = document.createElement('div');
-    content.className = 'assistant-content';
-    msgDiv.appendChild(status);
-    msgDiv.appendChild(content);
-    messagesArea.appendChild(msgDiv);
-    // Force scroll on new message creation
-    messagesArea.scrollTop = messagesArea.scrollHeight;
-    return { msgDiv, content, status };
-}
-
-async function runAgentLoop(query) {
-    const { msgDiv, content, status } = createMessageDiv();
-    const statusText = status.querySelector('.status-text');
-
-    try {
-        while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
-
-        let messages = [
-            { role: "system", content: SYSTEM_PROMPT },
-            ...conversationHistory,
-            { role: "user", content: query }
-        ];
-
-        let finalResponse = "";
-        let loops = 0;
-        let forceStop = false;
-
-        // We will manage where the text goes using a specific container
-        // so we don't overwrite Tool Results (Charts).
-        let currentTextContainer = document.createElement("div");
-        content.appendChild(currentTextContainer);
-
-        while (loops < 5 && !forceStop) {
-            if (!isGenerating) { forceStop = true; break; }
-
-            const completion = await agentEngine.chat.completions.create({
-                messages: messages, temperature: 0.7, stream: true
-            });
-
-            let currentChunk = "";
-            // Use a text node for smooth appending without reflowing whole div
-            let textNode = document.createTextNode("");
-            currentTextContainer.appendChild(textNode);
-
-            for await (const chunk of completion) {
-                if (!isGenerating) { forceStop = true; break; }
-                const delta = chunk.choices[0].delta.content;
-                if (delta) {
-                    currentChunk += delta;
-                    finalResponse += delta;
-                    textNode.nodeValue += delta;
-                    smartScroll();
-                }
-            }
-
-            if (forceStop) break;
-            
-            // Parse Markdown ONLY for the current chunk container, not the whole 'content'
-            parseAndRender(finalResponse, currentTextContainer);
-
-            const toolCall = parseToolAction(currentChunk);
-            if (toolCall) {
-                statusText.textContent = "Tool chal raha hai...";
-                
-                let result = { text: "Error" };
-                if (Tools[toolCall.name]) result = await Tools[toolCall.name](toolCall.args);
-                
-                let resultHtml = `<div class="tool-result"><b>Result:</b> ${result.text}</div>`;
-                
-                if (result.image) resultHtml += `<img src="${result.image}" style="max-width:100%; border-radius:8px; margin-top:5px;">`;
-                
-                // CHART FIX: Append chart to MAIN content, not the text container
-                if (result.profile) {
-                    let profileHtml = `<div class="profile-grid">`;
-                    result.profile.forEach(p => {
-                        profileHtml += `<div class="profile-card">
-                            <img src="${p.image}" class="profile-img">
-                            <div class="profile-info"><h3>${p.name}</h3><p>${p.desc || ''}</p></div>
-                        </div>`;
-                    });
-                    profileHtml += `</div>`;
-                    content.insertAdjacentHTML('beforeend', profileHtml);
-                } 
-                else if (result.chart) {
-                    const chartId = 'chart_' + Math.random().toString(36).substr(2, 9);
-                    // Append chart container to main content
-                    content.insertAdjacentHTML('beforeend', `<div class="chart-card"><canvas id="${chartId}"></canvas></div>`);
-                    setTimeout(() => {
-                        const ctx = document.getElementById(chartId);
-                        if(ctx) new Chart(ctx, { 
-                            type: result.chart.type || 'bar', 
-                            data: { labels: result.chart.labels, datasets: [{ label: 'Data', data: result.chart.values, borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.1)' }] },
-                            options: { responsive: true, maintainAspectRatio: false }
-                        });
-                    }, 100);
-                }
-                else {
-                    // Standard result
-                    content.insertAdjacentHTML('beforeend', resultHtml);
-                }
-                
-                // Create a NEW container for the NEXT text response (so we don't overwrite the chart)
-                currentTextContainer = document.createElement("div");
-                content.appendChild(currentTextContainer);
-
-                messages.push({ role: "assistant", content: currentChunk });
-                messages.push({ role: "user", content: `Observation: ${result.text}` });
-                
-                finalResponse = ""; 
-                loops++;
-            } else {
-                break; 
-            }
+            const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
+            const d = await res.json();
+            return { text: d.extract, image: d.thumbnail?.source };
+        } catch {
+            return { text: "Wiki error" };
         }
+    },
 
-        conversationHistory.push({ role: "user", content: query });
-        conversationHistory.push({ role: "assistant", content: finalResponse });
-        status.style.display = 'none';
+    async get_weather({ city }) {
+        try {
+            const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${city}`)).json();
+            if (!geo.results?.[0]) return { text: "City nahi mila" };
 
-    } catch (e) {
-        if (!e.message.includes("interrupt")) {
-            content.innerHTML += `<span style="color:red">Error: ${e.message}</span>`;
+            const { latitude, longitude, name } = geo.results[0];
+            const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)).json();
+
+            return { text: `${name} me ${w.current_weather.temperature}°C hai` };
+        } catch {
+            return { text: "Weather error" };
         }
-    } finally {
-        isGenerating = false;
-        isResetting = false; 
-        sendBtn.classList.remove('stop-btn');
-        sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+    },
+
+    async get_crypto({ id }) {
+        try {
+            const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+            const d = await res.json();
+            return { text: `${id}: $${d[id]?.usd || "N/A"}` };
+        } catch {
+            return { text: "Crypto error" };
+        }
+    },
+
+    async generate_chart(data) {
+        return { text: "Chart ready", chart: data };
+    },
+
+    async create_profile_chart({ items }) {
+        return { text: "Profiles ready", profile: items };
     }
-}
-
-// ==========================================
-// 6. RENDERER
-// ==========================================
-function parseAndRender(text, container) {
-    let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => 
-        `<div class="code-block"><div class="code-header"><span>${lang||'code'}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><div class="code-body"><pre>${code}</pre></div></div>`
-    );
-    container.innerHTML = html.replace(/\n/g, '<br>');
-}
-
-window.copyCode = (btn) => {
-    navigator.clipboard.writeText(btn.closest('.code-block').querySelector('pre').textContent);
-    btn.textContent = 'Copied';
 };
 
 // ==========================================
-// 7. INITIALIZATION
+// 4. TOOL PARSER (SAFE)
 // ==========================================
-function showError(t, e) { 
-    debugLog.style.display = 'block'; 
-    debugLog.innerHTML = `${t}: ${e.message}`; 
-    console.error(e);
+function parseTool(text) {
+    try {
+        const match = text.match(/ACTION:\s*(\w+)\s*ARGS:\s*(\{[\s\S]*\})/i);
+        if (!match) return null;
+        return {
+            name: match[1],
+            args: JSON.parse(match[2])
+        };
+    } catch {
+        return null;
+    }
 }
 
-async function init() {
+// ==========================================
+// 5. SUB-AGENT SYSTEM
+// ==========================================
+async function runSubAgent(name, prompt) {
+    if (!State.sub[name]) return null;
+
     try {
-        loadingLabel.textContent = "Initializing...";
-        if (!navigator.gpu) throw new Error("WebGPU not supported.");
+        const res = await State.sub[name].chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            stream: false
+        });
+        return res.choices[0].message.content;
+    } catch {
+        return null;
+    }
+}
 
-        modelStatusContainer.innerHTML = `
-          <div class="model-card">
-            <div class="model-card-name">${AGENT_MODEL.name}</div>
-            <div class="model-card-desc" id="status-agent">Waiting...</div>
-          </div>
-        `;
+// ==========================================
+// 6. CORE AGENT LOOP (SAFE + EXTENDABLE)
+// ==========================================
+async function runAgent(query, onUpdate) {
 
-        cancelAnimationFrame(animationFrameId);
-        currentProgress = 0; targetProgress = 0;
-        animationFrameId = requestAnimationFrame(animateProgress);
+    State.generating = true;
 
-        agentEngine = await webllm.CreateMLCEngine(AGENT_MODEL.id, {
-            initProgressCallback: (report) => {
-                targetProgress = report.progress * 100;
-                document.getElementById('status-agent').textContent = report.text;
-            }
+    // optional preprocessing (sub-agent)
+    const refined = await runSubAgent("helper", `Improve this input: ${query}`);
+    if (refined) query = refined;
+
+    let messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...State.history,
+        { role: "user", content: query }
+    ];
+
+    let final = "";
+
+    for (let i = 0; i < 5; i++) {
+
+        if (!State.generating) break;
+
+        const stream = await State.main.chat.completions.create({
+            messages,
+            stream: true
         });
 
-        targetProgress = 100; 
-        document.getElementById('status-agent').textContent = "Ready";
-        loadingLabel.textContent = "Ready.";
-        
-        setTimeout(() => {
-            cancelAnimationFrame(animationFrameId);
-            sliderFill.style.width = '100%';
-            loadingPercent.textContent = "100.00%";
-            loadingScreen.classList.add('hidden');
-            chatContainer.classList.add('active');
-            sendBtn.disabled = false;
-        }, 800);
+        let chunkText = "";
 
-    } catch (e) { 
-        cancelAnimationFrame(animationFrameId);
-        showError("Init Failed", e); 
+        for await (const chunk of stream) {
+            if (!State.generating) break;
+
+            const t = chunk.choices[0].delta.content;
+            if (t) {
+                final += t;
+                chunkText += t;
+                onUpdate?.(t);
+            }
+        }
+
+        const tool = parseTool(chunkText);
+
+        if (!tool || !Tools[tool.name]) break;
+
+        const result = await Tools[tool.name](tool.args);
+
+        onUpdate?.(`\n\n🔧 ${result.text}\n\n`);
+
+        messages.push({ role: "assistant", content: chunkText });
+        messages.push({ role: "user", content: `Observation: ${result.text}` });
+
+        final = "";
+    }
+
+    State.history.push({ role: "user", content: query });
+    State.history.push({ role: "assistant", content: final });
+
+    State.generating = false;
+}
+
+// ==========================================
+// 7. INIT SYSTEM (MAIN + SUB)
+// ==========================================
+async function init() {
+
+    // MAIN MODEL
+    State.main = await webllm.CreateMLCEngine(MAIN_MODEL.id);
+
+    // SUB AGENTS (SAFE LOAD)
+    try {
+        State.sub.helper = await webllm.CreateMLCEngine(SUB_MODELS.helper);
+    } catch {}
+
+    try {
+        State.sub.fast = await webllm.CreateMLCEngine(SUB_MODELS.fast);
+    } catch {}
+
+    console.log("All agents ready");
+}
+
+// ==========================================
+// 8. BASIC UI HOOK (SAFE)
+// ==========================================
+async function sendMessage(text) {
+
+    let output = "";
+
+    await runAgent(text, (chunk) => {
+        output += chunk;
+        console.log(output); // replace with UI later
+    });
+
+    return output;
+}
+
+// ==========================================
+// 9. START
+// ==========================================
+init();
+
+// TEST
+window.ask = async (q) => {
+    const res = await sendMessage(q);
+    console.log("FINAL:", res);
+};
+// ==========================================
+// 10. UI SYSTEM (ADD-ONLY MODULE)
+// ==========================================
+
+// DOM (safe: if missing, code won't crash)
+const UI = {
+    messages: document.getElementById("messagesArea"),
+    input: document.getElementById("inputText"),
+    send: document.getElementById("sendBtn")
+};
+
+// SAFE DOM CHECK
+function hasUI() {
+    return UI.messages && UI.input && UI.send;
+}
+
+// CREATE MESSAGE
+function createMessage(type, text = "") {
+    if (!hasUI()) return null;
+
+    const msg = document.createElement("div");
+    msg.className = `message ${type}`;
+
+    const bubble = document.createElement("div");
+    bubble.className = `${type}-bubble`;
+    bubble.innerHTML = text;
+
+    msg.appendChild(bubble);
+    UI.messages.appendChild(msg);
+
+    UI.messages.scrollTop = UI.messages.scrollHeight;
+
+    return bubble;
+}
+
+// STREAM UPDATE
+function streamToBubble(bubble, chunk) {
+    if (!bubble) return;
+    bubble.innerHTML += chunk;
+    UI.messages.scrollTop = UI.messages.scrollHeight;
+}
+
+// ==========================================
+// 11. RENDER EXTRA (TOOLS UI)
+// ==========================================
+function renderToolResult(result) {
+    if (!hasUI()) return;
+
+    if (result.image) {
+        const img = document.createElement("img");
+        img.src = result.image;
+        img.style.maxWidth = "100%";
+        UI.messages.appendChild(img);
+    }
+
+    if (result.chart) {
+        const canvas = document.createElement("canvas");
+        UI.messages.appendChild(canvas);
+
+        setTimeout(() => {
+            new Chart(canvas, {
+                type: result.chart.type || "bar",
+                data: {
+                    labels: result.chart.labels,
+                    datasets: [{
+                        label: "Data",
+                        data: result.chart.values
+                    }]
+                }
+            });
+        }, 100);
     }
 }
 
 // ==========================================
-// 8. EVENTS
+// 12. CONNECT UI WITH AGENT
 // ==========================================
+async function handleSend() {
 
-async function handleAction() {
-    // STOP LOGIC
-    if (isGenerating) {
-        console.log("Stopping...");
-        isGenerating = false; 
-        isResetting = true;   
-        sendBtn.innerHTML = "Resetting...";
-        
-        if(agentEngine) {
-            try {
-                await agentEngine.interruptGenerate();
-                await agentEngine.resetChat();
-                conversationHistory = []; 
-                console.log("Engine Reset Complete.");
-            } catch(e) { console.log("Reset error", e); }
-        }
-        
-        sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
-        isResetting = false;
-        return;
-    }
+    if (!hasUI()) return;
 
-    if (isResetting) return;
-
-    const text = inputText.value.trim();
+    const text = UI.input.value.trim();
     if (!text) return;
 
-    const userMsg = document.createElement('div');
-    userMsg.className = 'message user';
-    userMsg.innerHTML = `<div class="user-bubble">${text}</div>`;
-    messagesArea.appendChild(userMsg);
+    UI.input.value = "";
 
-    inputText.value = '';
-    inputText.style.height = 'auto';
+    // USER MESSAGE
+    createMessage("user", text);
 
-    isGenerating = true;
-    sendBtn.classList.add('stop-btn');
-    sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
-    
-    smartScroll();
-    await runAgentLoop(text);
+    // ASSISTANT MESSAGE
+    const bubble = createMessage("assistant", "");
+
+    await runAgent(text, (chunk) => {
+        streamToBubble(bubble, chunk);
+    });
 }
 
-inputText.oninput = function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px'; };
-inputText.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAction(); } };
-sendBtn.onclick = handleAction;
+// ==========================================
+// 13. EVENTS (SAFE)
+// ==========================================
+if (hasUI()) {
 
-init();
+    UI.send.onclick = handleSend;
+
+    UI.input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    });
+}
