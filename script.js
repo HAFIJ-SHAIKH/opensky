@@ -556,3 +556,113 @@ if (hasUIX()) {
         this.style.height = Math.min(this.scrollHeight, 100) + "px";
     });
 }
+// ==========================================
+// 23. ADVANCED MODEL LOADER (HIGH QUALITY)
+// ==========================================
+
+// MODEL STATUS UI
+function createModelCard(id, name) {
+    if (!UIX.modelStatus) return;
+
+    const div = document.createElement("div");
+    div.className = "model-card";
+    div.innerHTML = `
+        <div class="model-card-name">${name}</div>
+        <div class="model-card-desc" id="status-${id}">Waiting...</div>
+    `;
+    UIX.modelStatus.appendChild(div);
+}
+
+// UPDATE STATUS
+function updateModelStatus(id, text) {
+    const el = document.getElementById(`status-${id}`);
+    if (el) el.textContent = text;
+}
+
+// SAFE LOADER WITH RETRY
+async function loadModelSafe(id, label, progressStart, progressEnd) {
+    createModelCard(id, label);
+
+    let attempts = 0;
+    const maxRetries = 2;
+
+    while (attempts <= maxRetries) {
+        try {
+            updateModelStatus(id, "Loading...");
+
+            const engine = await webllm.CreateMLCEngine(id, {
+                initProgressCallback: (r) => {
+                    const scaled =
+                        progressStart + (progressEnd - progressStart) * r.progress;
+                    updateProgress(scaled, r.text);
+                    updateModelStatus(id, r.text);
+                }
+            });
+
+            updateModelStatus(id, "Ready");
+            return engine;
+
+        } catch (e) {
+            attempts++;
+            updateModelStatus(id, `Retry ${attempts}...`);
+
+            if (attempts > maxRetries) {
+                updateModelStatus(id, "Failed");
+                console.warn(`Model failed: ${id}`, e);
+                return null;
+            }
+        }
+    }
+}
+
+// ==========================================
+// 24. REPLACE INIT WITH ROBUST VERSION
+// ==========================================
+
+init = async function () {
+    try {
+        updateProgress(0, "Starting...");
+
+        // MAIN MODEL (MOST IMPORTANT)
+        State.main = await loadModelSafe(
+            MAIN_MODEL.id,
+            "Main Agent (Qwen 1.5B)",
+            0,
+            70
+        );
+
+        if (!State.main) {
+            throw new Error("Main model failed to load");
+        }
+
+        // HELPER SUB AGENT
+        State.sub.helper = await loadModelSafe(
+            SUB_MODELS.helper,
+            "Helper (0.5B)",
+            70,
+            85
+        );
+
+        // FAST SUB AGENT
+        State.sub.fast = await loadModelSafe(
+            SUB_MODELS.fast,
+            "Fast Agent (1B)",
+            85,
+            100
+        );
+
+        updateProgress(100, "All systems ready");
+
+        setTimeout(() => {
+            showApp();
+        }, 800);
+
+    } catch (e) {
+        console.error(e);
+
+        if (UIX.debug) {
+            UIX.debug.style.display = "block";
+            UIX.debug.textContent = e.message;
+        }
+    }
+};
