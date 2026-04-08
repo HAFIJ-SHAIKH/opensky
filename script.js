@@ -842,69 +842,146 @@ runAgent = async function (query, onUpdate) {
     return res;
 };
 // ==========================================
-// 31. SMOOTH PROGRESS ENGINE (FIX)
+// FIXED PROGRESS SYSTEM (ALWAYS VISIBLE)
 // ==========================================
 
-let currentProgress = 0;
-let targetProgress = 0;
-let progressAnim = null;
+let progressValue = 0;
+let fakeProgress = 0;
+let realProgress = 0;
+let progressRunning = false;
 
-function startSmoothProgress() {
-    cancelAnimationFrame(progressAnim);
+// SAFE UI MAP (IMPORTANT FIX)
+const UIX = {
+    slider: document.getElementById("sliderFill"),
+    percent: document.getElementById("loadingPercent"),
+    label: document.getElementById("loadingLabel"),
+    debug: document.getElementById("debugLog")
+};
 
-    function animate() {
-        const diff = targetProgress - currentProgress;
-
-        if (Math.abs(diff) > 0.1) {
-            currentProgress += diff * 0.08;
-        }
-
-        if (UIX.slider) {
-            UIX.slider.style.width = currentProgress + "%";
-            UIX.percent.textContent = currentProgress.toFixed(2) + "%";
-        }
-
-        progressAnim = requestAnimationFrame(animate);
-    }
-
-    animate();
-}
-
-function setProgressTarget(val, text) {
-    targetProgress = val;
+// FORCE UPDATE UI
+function updateProgressUI(val, text) {
+    if (UIX.slider) UIX.slider.style.width = val + "%";
+    if (UIX.percent) UIX.percent.textContent = val.toFixed(2) + "%";
     if (text && UIX.label) UIX.label.textContent = text;
 }
 
+// DEBUG LOGGER
+function logDebug(msg) {
+    console.log(msg);
+    if (UIX.debug) {
+        UIX.debug.style.display = "block";
+        UIX.debug.innerText += msg + "\n";
+    }
+}
+
+// START PROGRESS LOOP (ALWAYS RUNS)
+function startProgressLoop() {
+    if (progressRunning) return;
+    progressRunning = true;
+
+    function loop() {
+        // Fake progress keeps moving
+        if (fakeProgress < 95) {
+            fakeProgress += 0.05;
+        }
+
+        // Blend real + fake
+        progressValue = Math.max(realProgress, fakeProgress);
+
+        updateProgressUI(progressValue);
+
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+}
+
 // ==========================================
-// 32. IMPROVED MODEL LOADER (FIXED UI)
+// FIXED MODEL LOADER (REAL + DEBUG)
 // ==========================================
 
 async function loadModelTracked(id, label, start, end) {
-    createModelCard(id, label);
 
-    let lastUpdate = Date.now();
+    logDebug("Starting model: " + id);
+
+    let gotCallback = false;
 
     try {
         const engine = await webllm.CreateMLCEngine(id, {
             initProgressCallback: (r) => {
-                lastUpdate = Date.now();
+                gotCallback = true;
 
                 const scaled = start + (end - start) * r.progress;
-                setProgressTarget(scaled, r.text);
+                realProgress = scaled;
 
-                updateModelStatus(id, r.text);
+                updateProgressUI(scaled, r.text);
+
+                logDebug(`[${id}] ${r.text} (${(r.progress * 100).toFixed(1)}%)`);
             }
         });
 
-        updateModelStatus(id, "Ready");
+        if (!gotCallback) {
+            logDebug(`[${id}] No progress callback fired ⚠️`);
+        }
+
+        realProgress = end;
+        updateProgressUI(end, label + " Ready");
+
+        logDebug("Finished model: " + id);
+
         return engine;
 
     } catch (e) {
-        updateModelStatus(id, "Failed");
-        console.warn("Model failed:", id);
-        return null;
+        logDebug("ERROR loading " + id + ": " + e.message);
+        throw e;
     }
 }
+
+// ==========================================
+// INIT FIX (FORCE VISIBLE)
+// ==========================================
+
+init = async function () {
+
+    try {
+        startProgressLoop();
+
+        updateProgressUI(1, "Starting system...");
+
+        // MAIN MODEL
+        State.main = await loadModelTracked(
+            MAIN_MODEL.id,
+            "Main Model",
+            1,
+            70
+        );
+
+        // SUB MODELS
+        State.sub.helper = await loadModelTracked(
+            SUB_MODELS.helper,
+            "Helper Model",
+            70,
+            90
+        );
+
+        State.sub.fast = await loadModelTracked(
+            SUB_MODELS.fast,
+            "Fast Model",
+            90,
+            100
+        );
+
+        updateProgressUI(100, "All models ready");
+
+        setTimeout(() => {
+            showApp();
+        }, 800);
+
+    } catch (e) {
+        logDebug("FATAL: " + e.message);
+    }
+};
+
 
 // ==========================================
 // 33. PARALLEL SUB-AGENT SYSTEM (SUB-CLAW 🦀)
