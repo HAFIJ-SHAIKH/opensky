@@ -666,3 +666,178 @@ init = async function () {
         }
     }
 };
+// ==========================================
+// 25. BRAIN SYSTEM (SEMANTIC + PLANNING)
+// ==========================================
+
+async function semanticParse(input) {
+    // Use helper agent for understanding
+    const prompt = `
+Break this user input into JSON:
+
+Input: "${input}"
+
+Return JSON only:
+{
+ "intent": "...",
+ "objects": [],
+ "constraints": [],
+ "type": "chat | tool | data | question"
+}
+`;
+
+    try {
+        const res = await runSubAgent("helper", prompt);
+        return JSON.parse(res);
+    } catch {
+        return {
+            intent: input,
+            objects: [],
+            constraints: [],
+            type: "chat"
+        };
+    }
+}
+
+// ==========================================
+// 26. MULTI-STEP PLANNER
+// ==========================================
+async function createPlan(parsed) {
+
+    const prompt = `
+You are a planner AI.
+
+User intent: ${parsed.intent}
+Objects: ${JSON.stringify(parsed.objects)}
+Constraints: ${JSON.stringify(parsed.constraints)}
+
+Create a plan in JSON:
+
+{
+ "steps": [
+   { "action": "think | tool | respond", "tool": "", "reason": "" }
+ ],
+ "use_fast": true/false,
+ "use_tools": true/false
+}
+`;
+
+    try {
+        const res = await runSubAgent("helper", prompt);
+        return JSON.parse(res);
+    } catch {
+        return {
+            steps: [{ action: "respond" }],
+            use_fast: false,
+            use_tools: false
+        };
+    }
+}
+
+// ==========================================
+// 27. ROUTER DECISION ENGINE
+// ==========================================
+async function routeRequest(query) {
+
+    const parsed = await semanticParse(query);
+    const plan = await createPlan(parsed);
+
+    return {
+        parsed,
+        plan
+    };
+}
+
+// ==========================================
+// 28. EXECUTION ENGINE (SMART)
+// ==========================================
+async function executeWithPlan(query, onUpdate) {
+
+    const { parsed, plan } = await routeRequest(query);
+
+    console.log("Parsed:", parsed);
+    console.log("Plan:", plan);
+
+    // ⚡ FAST PATH (small agent)
+    if (plan.use_fast && State.sub.fast) {
+        const fastRes = await runSubAgent("fast", query);
+        if (fastRes) {
+            onUpdate?.(fastRes);
+            return fastRes;
+        }
+    }
+
+    // 🧠 MAIN AGENT PATH
+    return await runAgentWithPlan(query, plan, onUpdate);
+}
+
+// ==========================================
+// 29. MAIN AGENT WITH PLAN CONTROL
+// ==========================================
+async function runAgentWithPlan(query, plan, onUpdate) {
+
+    let messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...State.history,
+        { role: "user", content: query }
+    ];
+
+    let final = "";
+
+    for (let i = 0; i < 5; i++) {
+
+        if (!State.generating) break;
+
+        const stream = await State.main.chat.completions.create({
+            messages,
+            stream: true
+        });
+
+        let chunkText = "";
+
+        for await (const chunk of stream) {
+            if (!State.generating) break;
+
+            const t = chunk.choices[0].delta.content;
+            if (t) {
+                final += t;
+                chunkText += t;
+                onUpdate?.(t);
+            }
+        }
+
+        // TOOL CONTROL BASED ON PLAN
+        const tool = parseTool(chunkText);
+
+        if (!plan.use_tools || !tool || !Tools[tool.name]) break;
+
+        const result = await Tools[tool.name](tool.args);
+
+        onUpdate?.(`\n\n🔧 ${result.text}\n\n`);
+
+        messages.push({ role: "assistant", content: chunkText });
+        messages.push({ role: "user", content: `Observation: ${result.text}` });
+
+        final = "";
+    }
+
+    State.history.push({ role: "user", content: query });
+    State.history.push({ role: "assistant", content: final });
+
+    return final;
+}
+
+// ==========================================
+// 30. OVERRIDE MAIN SEND FLOW (IMPORTANT)
+// ==========================================
+
+const oldRunAgent = runAgent;
+
+runAgent = async function (query, onUpdate) {
+    State.generating = true;
+
+    const res = await executeWithPlan(query, onUpdate);
+
+    State.generating = false;
+    return res;
+};
