@@ -841,3 +841,160 @@ runAgent = async function (query, onUpdate) {
     State.generating = false;
     return res;
 };
+// ==========================================
+// 31. SMOOTH PROGRESS ENGINE (FIX)
+// ==========================================
+
+let currentProgress = 0;
+let targetProgress = 0;
+let progressAnim = null;
+
+function startSmoothProgress() {
+    cancelAnimationFrame(progressAnim);
+
+    function animate() {
+        const diff = targetProgress - currentProgress;
+
+        if (Math.abs(diff) > 0.1) {
+            currentProgress += diff * 0.08;
+        }
+
+        if (UIX.slider) {
+            UIX.slider.style.width = currentProgress + "%";
+            UIX.percent.textContent = currentProgress.toFixed(2) + "%";
+        }
+
+        progressAnim = requestAnimationFrame(animate);
+    }
+
+    animate();
+}
+
+function setProgressTarget(val, text) {
+    targetProgress = val;
+    if (text && UIX.label) UIX.label.textContent = text;
+}
+
+// ==========================================
+// 32. IMPROVED MODEL LOADER (FIXED UI)
+// ==========================================
+
+async function loadModelTracked(id, label, start, end) {
+    createModelCard(id, label);
+
+    let lastUpdate = Date.now();
+
+    try {
+        const engine = await webllm.CreateMLCEngine(id, {
+            initProgressCallback: (r) => {
+                lastUpdate = Date.now();
+
+                const scaled = start + (end - start) * r.progress;
+                setProgressTarget(scaled, r.text);
+
+                updateModelStatus(id, r.text);
+            }
+        });
+
+        updateModelStatus(id, "Ready");
+        return engine;
+
+    } catch (e) {
+        updateModelStatus(id, "Failed");
+        console.warn("Model failed:", id);
+        return null;
+    }
+}
+
+// ==========================================
+// 33. PARALLEL SUB-AGENT SYSTEM (SUB-CLAW 🦀)
+// ==========================================
+
+async function runParallelAgents(tasks) {
+    // tasks = [{agent:"helper", prompt:"..."}, ...]
+
+    const results = await Promise.allSettled(
+        tasks.map(t => runSubAgent(t.agent, t.prompt))
+    );
+
+    return results.map((r, i) => ({
+        task: tasks[i],
+        output: r.status === "fulfilled" ? r.value : null
+    }));
+}
+
+// ==========================================
+// 34. COLLABORATIVE INTENT SYSTEM (BASIC)
+// ==========================================
+
+function detectIntentPattern(history) {
+    // simple pattern detection (upgrade later)
+    const last = history.slice(-3).map(m => m.content).join(" ");
+
+    if (last.includes("compare")) return "comparison";
+    if (last.includes("price")) return "data";
+    if (last.includes("explain")) return "explanation";
+
+    return "general";
+}
+
+// ==========================================
+// 35. EMERGENT COORDINATION SIGNAL (FUN + USEFUL)
+// ==========================================
+
+function getAgentSignal(type) {
+    const signals = {
+        fast: "⚡",
+        helper: "🧠",
+        tool: "🔧",
+        parallel: "🦀"
+    };
+
+    return signals[type] || "•";
+}
+
+// ==========================================
+// 36. UPGRADE INIT AGAIN (FINAL FIX)
+// ==========================================
+
+init = async function () {
+    try {
+        startSmoothProgress();
+
+        setProgressTarget(2, "Booting system...");
+
+        // MAIN MODEL
+        State.main = await loadModelTracked(
+            MAIN_MODEL.id,
+            "Main Agent (Qwen 1.5B)",
+            2,
+            70
+        );
+
+        if (!State.main) throw new Error("Main model failed");
+
+        // SUB AGENTS (PARALLEL LOAD 🔥)
+        const [helper, fast] = await Promise.allSettled([
+            loadModelTracked(SUB_MODELS.helper, "Helper (0.5B)", 70, 85),
+            loadModelTracked(SUB_MODELS.fast, "Fast (1B)", 85, 100)
+        ]);
+
+        if (helper.status === "fulfilled") State.sub.helper = helper.value;
+        if (fast.status === "fulfilled") State.sub.fast = fast.value;
+
+        setProgressTarget(100, "All systems ready");
+
+        setTimeout(() => {
+            cancelAnimationFrame(progressAnim);
+            showApp();
+        }, 800);
+
+    } catch (e) {
+        console.error(e);
+
+        if (UIX.debug) {
+            UIX.debug.style.display = "block";
+            UIX.debug.textContent = e.message;
+        }
+    }
+};
