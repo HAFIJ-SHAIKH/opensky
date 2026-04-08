@@ -1,3 +1,4 @@
+console.log("SCRIPT RUNNING");
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
 // ==========================================
@@ -1075,3 +1076,4 @@ init = async function () {
         }
     }
 };
+init();
