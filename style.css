@@ -1,102 +1,215 @@
+/* ================= ROOT ================= */
 :root {
-  --bg-page: #ffffff;
-  --primary: #000000;
-  --text-main: #000000;
-  --text-muted: #555555;
-  --border: #e0e0e0;
+  --bg: #ffffff;
+  --text: #000000;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --soft: #f9fafb;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; width: 100%; overflow: hidden; background: white; }
-body { font-family: 'Inter', sans-serif; color: var(--text-main); height: 100dvh; }
+/* ================= BASE ================= */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
 
-/* Loading */
-.loading-screen { position: fixed; inset: 0; background: white; display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s; }
-.loading-screen.hidden { opacity: 0; pointer-events: none; }
-.loader-content { width: 100%; max-width: 400px; padding: 2rem; text-align: center; }
-.loader-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
-.loader-status { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; height: 1.2em; }
-.progress-container { width: 100%; height: 3px; background: #eee; border-radius: 2px; overflow: hidden; margin-bottom: 0.5rem; }
-.progress-bar { height: 100%; background: var(--primary); width: 0%; transition: width 0.1s linear; }
-.progress-stats { font-size: 0.8rem; font-weight: 600; }
-.model-status-container { margin-top: 2rem; text-align: left; }
-.model-card { background: #fafafa; border: 1px solid var(--border); padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
-.model-card-name { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
-.model-card-desc { font-size: 0.65rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
-#debugLog { margin-top: 1rem; color: red; font-size: 0.7rem; font-family: monospace; text-align: left; }
+/* ================= LOADING ================= */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
 
-/* App */
-.app-container { display: none; flex-direction: column; height: 100%; max-width: 800px; margin: 0 auto; }
-.app-container.active { display: flex; }
+.loader-content {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  padding: 2rem;
+}
 
-.chat-area { flex: 1; overflow-y: auto; padding: 1.5rem; background: #fafafa; display: flex; flex-direction: column; gap: 1rem; }
+.loader-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
 
-.message { display: flex; flex-direction: column; animation: fadeUp 0.3s ease; width: 100%; }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.loader-status {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  height: 1.2em;
+}
 
-/* User Bubble */
-.message.user { align-items: flex-end; }
-.user-bubble { background: #000; color: white; padding: 0.75rem 1rem; border-radius: 16px 16px 4px 16px; max-width: 70%; font-size: 0.9rem; }
+/* PROGRESS */
+.progress-container {
+  width: 100%;
+  height: 4px;
+  background: #eee;
+  margin-top: 20px;
+  border-radius: 3px;
+  overflow: hidden;
+}
 
-/* Assistant NO BUBBLE */
-.message.assistant { align-items: flex-start; padding-left: 0.5rem; }
-.assistant-content { font-size: 0.95rem; line-height: 1.6; max-width: 85%; }
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: black;
+  transition: width 0.15s linear;
+}
 
-/* Status & Blink */
-.agent-status { font-size: 0.7rem; color: #888; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem; }
-.agent-status-dot { width: 6px; height: 6px; background: #000; border-radius: 50%; animation: blink 1s infinite; }
-@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+.progress-stats {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
 
-/* Tool Result Container */
-.tool-result { background: #f0f0f0; border-left: 2px solid #000; padding: 0.5rem; margin-top: 0.5rem; font-size: 0.85rem; border-radius: 4px; }
-.tool-result img { max-width: 100%; border-radius: 4px; margin-top: 0.5rem; display: block; }
+/* DEBUG */
+#debugLog {
+  margin-top: 1rem;
+  font-size: 0.7rem;
+  color: #ef4444;
+  text-align: left;
+  white-space: pre-wrap;
+}
 
-/* --- NEW TOOL STYLES --- */
+/* MODEL STATUS */
+.model-status-container {
+  margin-top: 1.5rem;
+}
 
-/* Profile Grid */
-.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem; }
-.profile-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: transform 0.2s; border: 1px solid #eee; }
-.profile-card:hover { transform: translateY(-5px); }
-.profile-img { width: 100%; height: 150px; object-fit: cover; background: #eee; }
-.profile-info { padding: 0.75rem; text-align: center; }
-.profile-info h3 { font-size: 0.9rem; margin: 0; }
-.profile-info p { font-size: 0.7rem; color: #666; margin-top: 0.25rem; }
+.model-card {
+  background: var(--soft);
+  border: 1px solid var(--border);
+  padding: 0.6rem;
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  font-size: 0.7rem;
+  display: flex;
+  justify-content: space-between;
+}
 
-/* Comparison Table */
-.comparison-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #eee; }
-.comparison-table th { background: #f5f5f5; padding: 0.5rem; text-align: left; font-size: 0.8rem; border-bottom: 2px solid #000; }
-.comparison-table td { padding: 0.5rem; font-size: 0.8rem; border-bottom: 1px solid #eee; }
+/* ================= APP ================= */
+.app-container {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  max-width: 800px;
+  margin: auto;
+}
 
-/* Timeline */
-.timeline-container { position: relative; margin: 1rem 0; padding-left: 20px; border-left: 2px solid #000; }
-.timeline-item { position: relative; margin-bottom: 1rem; }
-.timeline-item::before { content: ''; position: absolute; left: -26px; top: 5px; width: 10px; height: 10px; background: #000; border-radius: 50%; }
-.timeline-date { font-weight: bold; font-size: 0.8rem; }
-.timeline-content { font-size: 0.85rem; color: #444; }
+.app-container.active {
+  display: flex;
+}
 
-/* QR Code */
-.qr-container { background: white; padding: 1rem; border-radius: 12px; display: inline-block; border: 1px solid #eee; margin-top: 0.5rem; }
+/* ================= CHAT ================= */
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
 
-/* Flashcards */
-.flashcard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 0.5rem; }
-.flashcard { background: white; border: 1px solid #000; border-radius: 12px; padding: 1rem; text-align: center; cursor: pointer; transition: 0.3s; }
-.flashcard:hover { background: #000; color: white; }
-.flashcard-q { font-weight: bold; font-size: 0.9rem; }
-.flashcard-a { font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.7; }
+/* MESSAGE */
+.message {
+  display: flex;
+  flex-direction: column;
+  animation: fade 0.25s ease;
+}
 
-/* Code & Input */
-.code-block { background: #1e293b; border-radius: 6px; margin: 0.5rem 0; overflow: hidden; color: #fff; }
-.code-header { background: #334155; padding: 0.4rem 0.8rem; font-size: 0.7rem; display: flex; justify-content: space-between; }
-.code-body { padding: 0.8rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre; }
-.copy-btn { background: #475569; border: none; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem; cursor: pointer; }
+@keyframes fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
-.input-area { padding: 1rem 1.5rem; background: white; border-top: 1px solid var(--border); padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
-.input-wrapper { display: flex; background: #fafafa; border: 1px solid var(--border); border-radius: 20px; padding: 0.5rem; padding-left: 1rem; align-items: center; }
-.input-wrapper:focus-within { border-color: #000; }
-.input-field { flex: 1; border: none; background: transparent; outline: none; font-size: 0.95rem; resize: none; }
-.send-btn { width: 36px; height: 36px; background: #000; color: white; border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.send-btn:disabled { opacity: 0.3; }
-.send-btn.stop-btn { background: #ef4444; }
+/* USER */
+.message.user {
+  align-items: flex-end;
+}
+
+.user-bubble {
+  background: black;
+  color: white;
+  padding: 0.7rem 1rem;
+  border-radius: 14px 14px 4px 14px;
+  max-width: 70%;
+  font-size: 0.9rem;
+}
+
+/* ASSISTANT CLEAN */
+.message.assistant {
+  align-items: flex-start;
+}
+
+.assistant-content {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 85%;
+}
+
+/* STATUS */
+.agent-status {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* ================= INPUT ================= */
+.input-area {
+  border-top: 1px solid var(--border);
+  padding: 1rem;
+  background: white;
+}
+
+.input-wrapper {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.4rem 0.6rem;
+  background: #fafafa;
+}
+
+.input-field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+  font-size: 0.95rem;
+  padding: 6px;
+}
+
+/* BUTTON */
+.send-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: black;
+  color: white;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.send-btn:hover {
+  transform: scale(1.05);
+}
+
+.send-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
