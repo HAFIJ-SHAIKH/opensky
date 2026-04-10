@@ -850,478 +850,12 @@ const Toast = {
 };
 /**
  * ============================================================
- *  PART 4: LOADING ENGINE, INITIALIZATION & STYLE INJECTOR
+ *  PART 4: LOADING ENGINE, INITIALIZATION
  * ============================================================
  */
 
 
-/* ── 4.1 Inline Style Injector ──
- *  Adds CSS for all dynamically-created elements that aren't
- *  covered by the external style.txt file.
- */
-const StyleInjector = {
-
-    _injected: false,
-
-    inject() {
-        if (this._injected) return;
-        this._injected = true;
-
-        const css = `
-            /* ── Model Picker ── */
-            .model-search-wrap {
-                position: relative;
-                margin-bottom: var(--space-md);
-            }
-            .model-search-icon {
-                position: absolute;
-                left: 12px;
-                top: 50%;
-                transform: translateY(-50%);
-                color: var(--color-text-muted);
-                pointer-events: none;
-                font-size: var(--text-sm);
-            }
-            .model-search-input {
-                width: 100%;
-                padding: 10px 14px 10px 38px;
-                border: 1px solid var(--color-border);
-                border-radius: var(--radius-md);
-                font-size: var(--text-sm);
-                background-color: var(--color-bg-secondary);
-                transition: border-color var(--transition-fast);
-            }
-            .model-search-input:focus {
-                border-color: var(--color-primary);
-                outline: none;
-            }
-            .model-list {
-                max-height: 340px;
-                overflow-y: auto;
-                display: flex;
-                flex-direction: column;
-                gap: 2px;
-                margin-bottom: var(--space-lg);
-            }
-            .model-list::-webkit-scrollbar { width: 4px; }
-            .model-item {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 10px 14px;
-                border-radius: var(--radius-md);
-                cursor: pointer;
-                transition: all var(--transition-fast);
-                border: 1px solid transparent;
-            }
-            .model-item:hover { background-color: var(--color-bg-tertiary); }
-            .model-item.selected {
-                background-color: var(--color-bg-secondary);
-                border-color: var(--color-primary);
-            }
-            .model-item-radio {
-                width: 18px;
-                height: 18px;
-                border-radius: 50%;
-                border: 2px solid var(--color-border);
-                flex-shrink: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: border-color var(--transition-fast);
-            }
-            .model-item.selected .model-item-radio { border-color: var(--color-primary); }
-            .model-item.selected .model-item-radio::after {
-                content: '';
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
-                background-color: var(--color-primary);
-            }
-            .model-item-info { flex: 1; min-width: 0; }
-            .model-item-name {
-                font-size: var(--text-sm);
-                font-weight: var(--font-semibold);
-                color: var(--color-text-main);
-            }
-            .model-item-meta {
-                font-size: var(--text-xs);
-                color: var(--color-text-muted);
-                margin-top: 2px;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .model-item-remove {
-                width: 28px;
-                height: 28px;
-                border-radius: var(--radius-sm);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: var(--color-text-muted);
-                opacity: 0;
-                transition: all var(--transition-fast);
-                flex-shrink: 0;
-                font-size: 14px;
-            }
-            .model-item:hover .model-item-remove { opacity: 1; }
-            .model-item-remove:hover {
-                background-color: var(--color-error-bg);
-                color: var(--color-error);
-            }
-            .model-add-section {
-                border-top: 1px solid var(--color-border);
-                padding-top: var(--space-lg);
-            }
-            .model-add-row {
-                display: flex;
-                gap: var(--space-sm);
-            }
-            .model-add-input {
-                flex: 1;
-                padding: 8px 12px;
-                border: 1px solid var(--color-border);
-                border-radius: var(--radius-md);
-                font-size: var(--text-sm);
-                font-family: var(--font-mono);
-                background-color: var(--color-bg-secondary);
-            }
-            .model-add-input:focus {
-                border-color: var(--color-primary);
-                outline: none;
-            }
-            .model-add-input::placeholder {
-                font-family: var(--font-sans);
-                color: var(--color-text-muted);
-            }
-            .model-add-btn {
-                padding: 8px 16px;
-                background-color: var(--color-primary);
-                color: white;
-                border-radius: var(--radius-md);
-                font-size: var(--text-sm);
-                font-weight: var(--font-semibold);
-                white-space: nowrap;
-                transition: background-color var(--transition-fast);
-            }
-            .model-add-btn:hover { background-color: var(--color-primary-hover); }
-            .model-add-error {
-                font-size: var(--text-xs);
-                color: var(--color-error);
-                margin-top: var(--space-xs);
-                min-height: 18px;
-            }
-            .model-restore-btn {
-                font-size: var(--text-xs);
-                color: var(--color-text-muted);
-                text-decoration: underline;
-                cursor: pointer;
-                margin-top: var(--space-sm);
-                display: inline-block;
-                transition: color var(--transition-fast);
-            }
-            .model-restore-btn:hover { color: var(--color-text-main); }
-            .model-empty {
-                text-align: center;
-                padding: var(--space-3xl);
-                color: var(--color-text-muted);
-                font-size: var(--text-sm);
-            }
-            .provider-label {
-                font-size: var(--text-xs);
-                font-weight: var(--font-semibold);
-                color: var(--color-text-muted);
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                padding: 8px 14px 4px;
-            }
-            .model-count-badge {
-                font-size: var(--text-xs);
-                color: var(--color-text-muted);
-                margin-bottom: var(--space-sm);
-            }
-
-            /* ── Confirm Dialog ── */
-            .confirm-title {
-                font-size: var(--text-lg);
-                font-weight: var(--font-semibold);
-                margin-bottom: var(--space-sm);
-            }
-            .confirm-message {
-                font-size: var(--text-sm);
-                color: var(--color-text-secondary);
-                line-height: var(--line-height-relaxed);
-                margin-bottom: var(--space-xl);
-            }
-            .confirm-actions {
-                display: flex;
-                justify-content: flex-end;
-                gap: var(--space-sm);
-            }
-            .btn-danger {
-                background-color: var(--color-error);
-                color: white;
-                padding: var(--space-sm) var(--space-lg);
-                font-size: var(--text-sm);
-                font-weight: var(--font-semibold);
-                border-radius: var(--radius-md);
-                transition: all var(--transition-fast);
-            }
-            .btn-danger:hover { background-color: #dc2626; }
-
-            /* ── History Item Extensions ── */
-            .history-item-wrap {
-                display: flex;
-                align-items: center;
-                gap: 2px;
-                width: 100%;
-            }
-            .history-item-text {
-                flex: 1;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-            .history-item-actions {
-                display: flex;
-                gap: 2px;
-                opacity: 0;
-                transition: opacity var(--transition-fast);
-                flex-shrink: 0;
-            }
-            .history-item-wrap:hover .history-item-actions { opacity: 1; }
-            .history-action-btn {
-                width: 24px;
-                height: 24px;
-                border-radius: var(--radius-sm);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 11px;
-                color: var(--color-text-muted);
-                transition: all var(--transition-fast);
-            }
-            .history-action-btn:hover {
-                background-color: var(--color-bg-tertiary);
-                color: var(--color-text-main);
-            }
-            .history-action-btn.delete:hover {
-                background-color: var(--color-error-bg);
-                color: var(--color-error);
-            }
-            .history-item-model-tag {
-                font-size: 9px;
-                color: var(--color-text-muted);
-                font-family: var(--font-mono);
-                flex-shrink: 0;
-                max-width: 80px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            /* ── Rename Input ── */
-            .rename-input {
-                width: 100%;
-                padding: 4px 8px;
-                border: 1px solid var(--color-primary);
-                border-radius: var(--radius-sm);
-                font-size: var(--text-sm);
-                background-color: var(--color-bg-secondary);
-                outline: none;
-            }
-
-            /* ── Export Dropdown ── */
-            .export-menu {
-                position: absolute;
-                top: 100%;
-                right: 0;
-                margin-top: 4px;
-                background-color: var(--color-surface);
-                border: 1px solid var(--color-border);
-                border-radius: var(--radius-md);
-                box-shadow: var(--shadow-lg);
-                z-index: 20;
-                min-width: 170px;
-                overflow: hidden;
-                animation: fadeDown 0.15s ease forwards;
-            }
-            .export-menu-item {
-                display: flex;
-                align-items: center;
-                gap: var(--space-sm);
-                padding: 9px 14px;
-                font-size: var(--text-sm);
-                color: var(--color-text-secondary);
-                transition: all var(--transition-fast);
-                width: 100%;
-                cursor: pointer;
-            }
-            .export-menu-item:hover {
-                background-color: var(--color-bg-tertiary);
-                color: var(--color-text-main);
-            }
-
-            /* ── No API Key Prompt ── */
-            .no-key-prompt {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: var(--space-md);
-                margin-top: var(--space-lg);
-            }
-            .no-key-desc {
-                font-size: var(--text-sm);
-                color: var(--color-text-secondary);
-                text-align: center;
-                max-width: 400px;
-                line-height: var(--line-height-relaxed);
-            }
-
-            /* ── Message Meta ── */
-            .msg-meta-row {
-                display: flex;
-                align-items: center;
-                gap: var(--space-sm);
-                margin-top: 4px;
-            }
-            .msg-word-count {
-                font-size: 10px;
-                color: var(--color-text-muted);
-                font-family: var(--font-mono);
-            }
-            .msg-model-tag {
-                font-size: 10px;
-                color: var(--color-text-muted);
-                font-family: var(--font-mono);
-                background-color: var(--color-bg-tertiary);
-                padding: 1px 6px;
-                border-radius: var(--radius-sm);
-            }
-            .regenerating-label {
-                font-size: var(--text-xs);
-                color: var(--color-text-muted);
-                font-style: italic;
-                padding: var(--space-xs) 0;
-            }
-
-            /* ── Settings inline fields ── */
-            .settings-section-title {
-                font-size: var(--text-xs);
-                font-weight: var(--font-semibold);
-                color: var(--color-text-muted);
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                margin-bottom: var(--space-md);
-                padding-bottom: var(--space-xs);
-                border-bottom: 1px solid var(--color-border);
-            }
-            .settings-field {
-                margin-bottom: var(--space-lg);
-            }
-            .settings-field:last-child { margin-bottom: 0; }
-            .settings-label {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                font-size: var(--text-sm);
-                font-weight: var(--font-medium);
-                color: var(--color-text-main);
-                margin-bottom: var(--space-xs);
-            }
-            .settings-value {
-                font-size: var(--text-xs);
-                font-family: var(--font-mono);
-                color: var(--color-text-muted);
-            }
-            .settings-hint {
-                font-size: var(--text-xs);
-                color: var(--color-text-muted);
-                margin-bottom: var(--space-xs);
-            }
-            .settings-textarea {
-                width: 100%;
-                padding: var(--space-md);
-                border: 1px solid var(--color-border);
-                border-radius: var(--radius-md);
-                font-family: var(--font-mono);
-                font-size: var(--text-sm);
-                background-color: var(--color-bg-secondary);
-                transition: border-color var(--transition-fast);
-                min-height: 100px;
-                max-height: 200px;
-                resize: vertical;
-            }
-            .settings-textarea:focus {
-                border-color: var(--color-primary);
-                outline: none;
-            }
-            .settings-range-row {
-                display: flex;
-                align-items: center;
-                gap: var(--space-md);
-            }
-            .settings-range {
-                flex: 1;
-                -webkit-appearance: none;
-                appearance: none;
-                height: 6px;
-                background: var(--color-bg-tertiary);
-                border-radius: var(--radius-full);
-                outline: none;
-            }
-            .settings-range::-webkit-slider-thumb {
-                -webkit-appearance: none;
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                background: var(--color-primary);
-                cursor: pointer;
-                border: 2px solid white;
-                box-shadow: var(--shadow-sm);
-            }
-            .settings-number {
-                width: 72px;
-                padding: 6px 8px;
-                border: 1px solid var(--color-border);
-                border-radius: var(--radius-md);
-                font-size: var(--text-sm);
-                font-family: var(--font-mono);
-                text-align: center;
-                background-color: var(--color-bg-secondary);
-            }
-            .settings-number:focus {
-                border-color: var(--color-primary);
-                outline: none;
-            }
-
-            /* ── Copy Full Response Button ── */
-            .copy-full-btn {
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                padding: 3px 8px;
-                border-radius: var(--radius-sm);
-                font-size: 11px;
-                color: var(--color-text-muted);
-                transition: all var(--transition-fast);
-            }
-            .copy-full-btn:hover {
-                background-color: var(--color-bg-tertiary);
-                color: var(--color-text-main);
-            }
-            .copy-full-btn.copied { color: var(--color-success); }
-        `;
-
-        const style = document.createElement('style');
-        style.textContent = css;
-        document.head.appendChild(style);
-    }
-};
-
-
-/* ── 4.2 Loading Engine ── */
+/* ── 4.1 Loading Engine ── */
 const LoadingEngine = {
 
     _progress: 0,
@@ -1405,12 +939,9 @@ const LoadingEngine = {
 };
 
 
-/* ── 4.3 API Key Validator ── */
+/* ── 4.2 API Key Validator ── */
 const APIValidator = {
 
-    /**
-     * Validate the API key by making a lightweight models list request
-     */
     async validateKey(key) {
         if (!Security.isValidKey(key)) return false;
 
@@ -1431,45 +962,41 @@ const APIValidator = {
             clearTimeout(timeout);
 
             if (res.status === 401 || res.status === 403) return false;
-            if (res.status === 429) return true; /* Rate limited but key is valid */
+            if (res.status === 429) return true;
             return res.ok;
 
         } catch (e) {
-            /* Network error doesn't mean key is invalid */
             if (e.name === 'AbortError') return false;
             console.warn('API validation network error (key may be valid):', e.message);
-            return true; /* Assume valid on network error to not block user */
+            return true;
         }
     }
 };
 
 
-/* ── 4.4 Main Initialization ── */
+/* ── 4.3 Main Initialization ── */
 const Init = {
 
     async run() {
         /* 1. Cache DOM */
         DOM.cache();
 
-        /* 2. Inject dynamic styles */
-        StyleInjector.inject();
-
-        /* 3. Load persisted data */
+        /* 2. Load persisted data */
         Storage.loadSettings();
         Storage.loadModels();
         Storage.loadSelectedModel();
         Storage.loadChats();
 
-        /* 4. Show loading screen */
+        /* 3. Show loading screen */
         LoadingEngine.start();
 
-        /* 5. Check API key */
+        /* 4. Check API key */
         if (!Security.isValidKey(API_KEY)) {
             LoadingEngine.fail(CONFIG.ERRORS.NO_API_KEY);
             return;
         }
 
-        /* 6. Validate key with OpenRouter */
+        /* 5. Validate key with OpenRouter */
         LoadingEngine._setStatus('Validating API key...');
 
         const valid = await APIValidator.validateKey(API_KEY);
@@ -1478,7 +1005,7 @@ const Init = {
             State.apiKeyValid = true;
             LoadingEngine.succeed();
 
-            /* 7. Boot UI after loading screen fades */
+            /* 6. Boot UI after loading screen fades */
             setTimeout(() => {
                 UI.boot();
             }, 600);
