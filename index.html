@@ -8,21 +8,30 @@
 </head>
 <body>
 
-<!-- Loading -->
+<!-- ================= LOADING SCREEN ================= -->
 <div id="loadingScreen" class="loading-screen">
-  <div class="loader-content">
+  <div class="loader-box">
     <div class="loader-title">Opensky</div>
-    <div class="skeleton title"></div>
-    <div class="skeleton bar"></div>
+    <div class="loader-status" id="loaderStatus">Initializing...</div>
+
+    <div class="loader-skeleton">
+      <div class="sk-line"></div>
+      <div class="sk-line"></div>
+      <div class="sk-line short"></div>
+    </div>
   </div>
 </div>
 
-<div class="app-container active">
+<!-- ================= APP ================= -->
+<div id="app" class="app-container">
 
   <!-- Header -->
   <div class="top-bar">
     <div class="app-title">Opensky</div>
-    <button id="clearChat">Clear</button>
+
+    <div class="top-actions">
+      <button id="clearChatBtn">Clear</button>
+    </div>
   </div>
 
   <!-- Chat -->
@@ -31,8 +40,11 @@
   <!-- Input -->
   <div class="input-area">
     <div class="input-wrapper">
-      <textarea id="inputText" class="input-field" placeholder="Ask anything..."></textarea>
-      <button id="sendBtn" class="send-btn">➤</button>
+      <textarea id="inputText" placeholder="Ask anything..."></textarea>
+
+      <button id="sendBtn" class="send-btn">
+        <span id="sendIcon">➤</span>
+      </button>
     </div>
   </div>
 
