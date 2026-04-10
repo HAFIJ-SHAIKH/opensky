@@ -24,7 +24,7 @@
    PASTE YOUR OPENROUTER API KEY HERE
    Get one free at: https://openrouter.ai/keys
    ════════════════════════════════════════════════════════════ */
-const API_KEY = 'PASTE_YOUR_OPENROUTER_API_KEY_HERE';
+const API_KEY = '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';
 
 
 /* ── 1.1 Master Configuration ── */
