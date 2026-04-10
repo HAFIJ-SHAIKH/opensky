@@ -1,173 +1,148 @@
 import { LlmInference, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest";
 
-// ==========================================
-// 1. CONFIG
-// ==========================================
+/* ================= CONFIG ================= */
 const CONFIG = {
-  agent_name: "Opensky",
-  creator: "Hafij Shaikh"
+  NAME: "Opensky",
+  MAX_HISTORY: 12
 };
 
-const SYSTEM_PROMPT = `
-You are ${CONFIG.agent_name}, created by ${CONFIG.creator}.
-
-Rules:
-- Answer clearly and simply
-- Keep responses short unless asked
-- Never output broken or random text
-- If unsure, say "I don't know"
-`;
-
-let history = [];
-const MAX_HISTORY = 12;
-
-// ==========================================
-// 2. DOM
-// ==========================================
+/* ================= DOM ================= */
 const chat = document.getElementById("messagesArea");
 const input = document.getElementById("inputText");
 const sendBtn = document.getElementById("sendBtn");
-const loadingScreen = document.getElementById("loadingScreen");
+const clearBtn = document.getElementById("clearChatBtn");
+const loader = document.getElementById("loadingScreen");
+const loaderStatus = document.getElementById("loaderStatus");
 
-// ==========================================
-// 3. MODEL
-// ==========================================
-let llm;
+/* ================= STATE ================= */
+let llm = null;
+let history = [];
 let isGenerating = false;
 
-// ==========================================
-// 4. GIBBERISH DETECTOR (KEEPED)
-// ==========================================
-function isGibberish(text) {
-  const patterns = [/\.{4,}/, /{.*}/, /<\/?>/];
-  let count = 0;
-  patterns.forEach(p => { if (p.test(text)) count++; });
-  return count >= 2;
-}
+/* ================= INIT ================= */
+async function initializeModel() {
+  try {
+    loaderStatus.innerText = "Loading engine...";
 
-// ==========================================
-// 5. TOOLS (KEEPED)
-// ==========================================
-const Tools = {
-  joke: async () => {
-    const d = await (await fetch("https://v2.jokeapi.dev/joke/Any?type=single")).json();
-    return d.joke;
+    const genai = await FilesetResolver.forGenAiTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm"
+    );
+
+    loaderStatus.innerText = "Downloading model...";
+
+    llm = await LlmInference.createFromOptions(genai, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-assets/gemma-2b-it-int4.bin"
+      },
+      temperature: 0.6,
+      maxTokens: 400
+    });
+
+    loaderStatus.innerText = "Ready";
+
+    setTimeout(() => {
+      loader.style.display = "none";
+    }, 500);
+
+  } catch (error) {
+    loaderStatus.innerText = "Failed to load model";
+    console.error(error);
   }
-};
-
-// SMART TOOL DETECTOR (NEW)
-function detectTool(q) {
-  q = q.toLowerCase();
-  if (q.includes("joke")) return ["joke"];
-  return null;
 }
 
-// ==========================================
-// 6. PROMPT BUILDER (IMPORTANT)
-// ==========================================
+/* ================= UI HELPERS ================= */
+function createUserMessage(text) {
+  const msg = document.createElement("div");
+  msg.className = "message user";
+
+  const bubble = document.createElement("div");
+  bubble.className = "user-bubble";
+  bubble.innerText = text;
+
+  msg.appendChild(bubble);
+  chat.appendChild(msg);
+}
+
+function createAssistantMessage() {
+  const msg = document.createElement("div");
+  msg.className = "message assistant";
+
+  const content = document.createElement("div");
+  content.className = "assistant-content";
+
+  msg.appendChild(content);
+  chat.appendChild(msg);
+
+  return content;
+}
+
+function scrollToBottom() {
+  chat.scrollTop = chat.scrollHeight;
+}
+
+/* ================= PROMPT ================= */
 function buildPrompt(userInput) {
-  let convo = history
-    .map(m => `${m.role.toUpperCase()}: ${m.text}`)
-    .join("\n");
+  let conversation = "";
+
+  for (let i = 0; i < history.length; i++) {
+    const item = history[i];
+    conversation += `${item.role.toUpperCase()}: ${item.text}\n`;
+  }
 
   return `
-${SYSTEM_PROMPT}
+You are Opensky AI. Answer clearly and naturally.
 
-${convo}
+${conversation}
 
 USER: ${userInput}
 ASSISTANT:
 `;
 }
 
-// ==========================================
-// 7. UI HELPERS
-// ==========================================
-function addUserMessage(text) {
-  const div = document.createElement("div");
-  div.className = "message user";
-  div.innerHTML = `<div class="user-bubble">${text}</div>`;
-  chat.appendChild(div);
-  scrollBottom();
-}
+/* ================= GENERATION ================= */
+async function generateResponse(userText) {
+  if (!llm) return;
 
-function addSkeleton() {
-  const div = document.createElement("div");
-  div.className = "message assistant";
+  const outputBox = createAssistantMessage();
 
-  div.innerHTML = `
-    <div class="assistant-content">
-      <div class="skeleton-line"></div>
-      <div class="skeleton-line"></div>
-      <div class="skeleton-line short"></div>
-    </div>
-  `;
-  chat.appendChild(div);
-  scrollBottom();
-  return div;
-}
+  let generatedText = "";
+  isGenerating = true;
 
-function scrollBottom() {
-  chat.scrollTop = chat.scrollHeight;
-}
-
-// ==========================================
-// 8. MAIN GENERATION (FULL SYSTEM)
-// ==========================================
-async function runGemma(query) {
-  const skeleton = addSkeleton();
-  const contentDiv = skeleton.querySelector(".assistant-content");
-
-  let finalText = "";
-  let prompt = buildPrompt(query);
-
-  // TOOL CHECK FIRST (FAST + STABLE)
-  const tool = detectTool(query);
-  if (tool) {
-    const result = await Tools[tool[0]]();
-    contentDiv.innerHTML = result;
-    history.push({ role: "user", text: query });
-    history.push({ role: "assistant", text: result });
-    return;
-  }
+  const prompt = buildPrompt(userText);
 
   try {
     await llm.generateResponse(prompt, (chunk, done) => {
+
       if (!isGenerating) return;
 
-      finalText += chunk;
+      generatedText += chunk;
 
-      // GIBBERISH PROTECTION
-      if (isGibberish(finalText)) {
-        finalText = "Generation error. Try again.";
+      outputBox.innerHTML = generatedText + `<span class="cursor"></span>`;
+      scrollToBottom();
+
+      if (done) {
+        outputBox.innerHTML = generatedText;
+
+        history.push({ role: "user", text: userText });
+        history.push({ role: "assistant", text: generatedText });
+
+        if (history.length > CONFIG.MAX_HISTORY) {
+          history.shift();
+        }
+
         isGenerating = false;
       }
 
-      // SMOOTH RENDER
-      contentDiv.innerHTML = finalText;
-      scrollBottom();
-
-      if (done) {
-        history.push({ role: "user", text: query });
-        history.push({ role: "assistant", text: finalText });
-
-        // LIMIT MEMORY
-        while (history.length > MAX_HISTORY) history.shift();
-      }
     });
 
-  } catch (e) {
-    contentDiv.innerHTML = `<span style="color:red">Error</span>`;
+  } catch (error) {
+    outputBox.innerHTML = "Error generating response.";
+    console.error(error);
   }
-
-  isGenerating = false;
-  sendBtn.classList.remove("stop-btn");
 }
 
-// ==========================================
-// 9. EVENTS
-// ==========================================
-async function handleSend() {
+/* ================= SEND ================= */
+function handleSend() {
   if (isGenerating) {
     isGenerating = false;
     return;
@@ -176,59 +151,43 @@ async function handleSend() {
   const text = input.value.trim();
   if (!text) return;
 
-  addUserMessage(text);
+  createUserMessage(text);
   input.value = "";
 
-  isGenerating = true;
-  sendBtn.classList.add("stop-btn");
-
-  await runGemma(text);
+  generateResponse(text);
 }
 
-sendBtn.onclick = handleSend;
+/* ================= EVENTS ================= */
+sendBtn.addEventListener("click", handleSend);
 
-input.onkeydown = e => {
+input.addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     handleSend();
   }
-};
+});
 
-// ==========================================
-// 10. LONG PRESS EDIT (ADDED)
-// ==========================================
+/* Clear Chat */
+clearBtn.addEventListener("click", () => {
+  chat.innerHTML = "";
+  history = [];
+});
+
+/* ================= EDIT ================= */
 let pressTimer;
 
-chat.addEventListener("mousedown", e => {
-  const msg = e.target.closest(".message.user");
-  if (!msg) return;
+chat.addEventListener("mousedown", (e) => {
+  const message = e.target.closest(".message.user");
+  if (!message) return;
 
   pressTimer = setTimeout(() => {
-    msg.classList.add("editing");
-    input.value = msg.innerText;
+    message.classList.add("editing");
+    input.value = message.innerText;
     input.focus();
   }, 500);
 });
 
 chat.addEventListener("mouseup", () => clearTimeout(pressTimer));
 
-// ==========================================
-// 11. INIT WITH LOADER
-// ==========================================
-async function init() {
-  const genai = await FilesetResolver.forGenAiTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm"
-  );
-
-  llm = await LlmInference.createFromOptions(genai, {
-    baseOptions: {
-      modelAssetPath: "./gemma-4-E2B-it-int4-Web.litertlm"
-    },
-    maxTokens: 400,
-    temperature: 0.6
-  });
-
-  loadingScreen.classList.add("hidden");
-}
-
-init();
+/* ================= START ================= */
+initializeModel();
