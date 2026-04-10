@@ -1,63 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Opensky</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opensky</title>
 
-  <link rel="stylesheet" href="style.css">
-
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="style.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
 <body>
 
-<!-- ================= LOADING ================= -->
+<!-- Loading Screen -->
 <div class="loading-screen" id="loadingScreen">
-  <div class="loader-content">
-
-    <h1 class="loader-title">Opensky</h1>
-    <p class="loader-status" id="loadingLabel">Booting system...</p>
-
-    <div class="progress-container">
-      <div class="progress-bar" id="sliderFill"></div>
-    </div>
-
-    <div class="progress-stats">
-      <span id="loadingPercent">0%</span>
-    </div>
-
-    <div id="modelStatusContainer" class="model-status-container"></div>
-
-    <pre id="debugLog"></pre>
-
+  <div class="loader-box">
+    <div class="skeleton title"></div>
+    <div class="skeleton bar"></div>
+    <p class="loading-text">Loading AI Model...</p>
   </div>
 </div>
 
-<!-- ================= APP ================= -->
-<div class="app-container" id="chatContainer">
+<!-- App -->
+<div class="app" id="app">
 
-  <main class="chat-area" id="messagesArea"></main>
+  <div class="chat" id="chat"></div>
 
-  <footer class="input-area">
-    <div class="input-wrapper">
-
-      <textarea id="inputText"
-        class="input-field"
-        placeholder="Ask anything..."
-        rows="1"></textarea>
-
-      <button id="sendBtn" class="send-btn" disabled>
-        ➤
-      </button>
-
-    </div>
-  </footer>
+  <div class="input-area">
+    <textarea id="input" placeholder="Ask anything..."></textarea>
+    <button id="send">➤</button>
+  </div>
 
 </div>
 
 <script type="module" src="script.js"></script>
-
 </body>
 </html>
