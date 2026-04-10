@@ -4,27 +4,21 @@
  *  Built by Hafij Shaikh
  * ============================================================
  *
- *  ► PASTE YOUR OPENROUTER API KEY ON THE LINE BELOW ◄
- *
  *  ARCHITECTURE (8 Parts):
- *    PART 1: API Key, Config, Constants & Free Model Registry
+ *    PART 1: Config, Constants & Free Model Registry
  *    PART 2: Application State & Persistent Storage
  *    PART 3: Model Manager, DOM Cache & Toast System
- *    PART 4: Loading Engine, Initialization & Style Injector
+ *    PART 4: Loading Engine & Initialization
  *    PART 5: Modal System, Settings UI & Confirm Dialog
  *    PART 6: Model Picker, Sidebar & Session Manager
  *    PART 7: Message Rendering, Markdown Parser & Export
- *    PART 8: OpenRouter Client, Agent Loop & Event Bindings
+ *    PART 8: API Client, Agent Loop & Event Bindings
+ *
+ *  API key is stored in Cloudflare secret named "key"
+ *  and accessed via proxy functions in /functions/api/
  *
  * ============================================================
  */
-
-
-/* ════════════════════════════════════════════════════════════
-   PASTE YOUR OPENROUTER API KEY HERE
-   Get one free at: https://openrouter.ai/keys
-   ════════════════════════════════════════════════════════════ */
-const API_KEY = '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';
 
 
 /* ── 1.1 Master Configuration ── */
@@ -34,9 +28,9 @@ const CONFIG = {
     CREATOR: 'Hafij Shaikh',
     VERSION: '2.0.0',
 
-    /* OpenRouter Endpoints */
-    OPENROUTER_CHAT_URL: 'https://openrouter.ai/api/v1/chat/completions',
-    OPENROUTER_MODELS_URL: 'https://openrouter.ai/api/v1/models',
+    /* Cloudflare Proxy Endpoints */
+    PROXY_CHAT_URL: '/api/chat',
+    PROXY_VALIDATE_URL: '/api/validate',
     SITE_URL: window.location.href,
     SITE_NAME: 'Opensky AI',
 
@@ -53,10 +47,7 @@ const CONFIG = {
         streamSpeed: 12
     },
 
-    /* ── Free Models Registry ──
-     *  Users manage their own subset via add/remove.
-     *  Each entry: { id, name, provider, description, contextLength }
-     */
+    /* ── Free Models Registry ── */
     FREE_MODELS_REGISTRY: [
         {
             id: 'deepseek/deepseek-chat-v3-0324:free',
@@ -171,7 +162,7 @@ const CONFIG = {
         'Tip: DeepSeek R1 is great for complex reasoning and math problems.',
         'Tip: Qwen3 235B is one of the largest free models available.',
         'Tip: You can add any free OpenRouter model to your list in the Model Picker.',
-        'Tip: Your API key is hardcoded in the script — never shared with anyone else.',
+        'Tip: Your API key is stored securely in Cloudflare — never exposed to the browser.',
         'Tip: Use Shift+Enter for multi-line messages in the input box.',
         'Tip: Export your conversations as Markdown for easy sharing.',
         'Tip: All chat history is stored in your browser locally.'
@@ -179,8 +170,8 @@ const CONFIG = {
 
     /* Error Messages */
     ERRORS: {
-        NO_API_KEY: 'No API key found. Open the JavaScript file and paste your OpenRouter key on the API_KEY line.',
-        INVALID_KEY: 'Your API key appears to be invalid. Please check the key in your JavaScript file.',
+        NO_API_KEY: 'API key not configured. Add a secret named "key" in Cloudflare Pages Settings > Environment Variables.',
+        INVALID_KEY: 'API key appears invalid. Check your Cloudflare secret "key".',
         RATE_LIMITED: 'Rate limited by OpenRouter. Please wait a moment and try again.',
         MODEL_UNAVAILABLE: 'The selected model is currently unavailable. Try switching to another model.',
         NETWORK_ERROR: 'Network error — please check your internet connection.',
@@ -189,7 +180,7 @@ const CONFIG = {
         EMPTY_RESPONSE: 'The model returned an empty response. Try rephrasing your message.',
         UNKNOWN: 'An unexpected error occurred. Please try again.',
         QUOTA_EXCEEDED: 'Free model quota may be exhausted. Try a different model.',
-        AUTH_FAILED: 'Authentication failed. Check your OpenRouter API key.'
+        AUTH_FAILED: 'Authentication failed. Check your Cloudflare secret "key".'
     },
 
     /* Welcome Screen Suggestions */
@@ -273,7 +264,6 @@ const Storage = {
         SELECTED_MODEL: 'opensky_selected_model'
     },
 
-    /* ── Low-level helpers ── */
     _get(key) {
         try { return localStorage.getItem(key); }
         catch (e) { console.warn('Storage read failed:', key, e); return null; }
@@ -295,7 +285,6 @@ const Storage = {
         catch (e) { console.warn('Storage remove failed:', key, e); }
     },
 
-    /* ── Settings ── */
     saveSettings() {
         return this._set(this.KEYS.SETTINGS, JSON.stringify(State.settings));
     },
@@ -318,7 +307,6 @@ const Storage = {
         }
     },
 
-    /* ── Chats / Sessions ── */
     saveChats() {
         try {
             const str = JSON.stringify(State.chats);
@@ -366,7 +354,6 @@ const Storage = {
         this._remove(this.KEYS.ACTIVE_CHAT);
     },
 
-    /* ── Model List ── */
     saveModels() {
         return this._set(this.KEYS.MODELS, JSON.stringify(State.availableModels));
     },
@@ -403,7 +390,6 @@ const Storage = {
         return State.selectedModelId;
     },
 
-    /* ── Nuclear Reset ── */
     clearEverything() {
         Object.values(this.KEYS).forEach(k => this._remove(k));
         State.chats = {};
@@ -430,10 +416,6 @@ const Security = {
         return d.innerHTML;
     },
 
-    isValidKey(key) {
-        return typeof key === 'string' && key.trim().length >= 20 && !key.includes('PASTE_YOUR');
-    },
-
     truncate(str, len) {
         if (!str) return '';
         return str.length > len ? str.slice(0, len) + '...' : str;
@@ -447,7 +429,6 @@ const Security = {
 
 /* ── 2.4 Utility Helpers ── */
 const Utils = {
-    /* Debounce a function */
     debounce(fn, ms) {
         let timer;
         return function (...args) {
@@ -456,18 +437,15 @@ const Utils = {
         };
     },
 
-    /* Count words in text */
     wordCount(text) {
         if (!text || !text.trim()) return 0;
         return text.trim().split(/\s+/).length;
     },
 
-    /* Count characters */
     charCount(text) {
         return text ? text.length : 0;
     },
 
-    /* Format timestamp */
     formatTime(ts) {
         if (!ts) return '';
         const d = new Date(ts);
@@ -485,19 +463,16 @@ const Utils = {
         return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     },
 
-    /* Format file size */
     formatSize(bytes) {
         if (bytes < 1024) return bytes + ' B';
         if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
         return (bytes / 1048576).toFixed(1) + ' MB';
     },
 
-    /* Sleep */
     sleep(ms) {
         return new Promise(r => setTimeout(r, ms));
     },
 
-    /* Copy text to clipboard with fallback */
     async copyToClipboard(text) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
             try {
@@ -505,7 +480,6 @@ const Utils = {
                 return true;
             } catch (e) { /* fallback below */ }
         }
-        /* Fallback for older browsers / file:// protocol */
         try {
             const ta = document.createElement('textarea');
             ta.value = text;
@@ -523,7 +497,6 @@ const Utils = {
         }
     },
 
-    /* Download a file */
     downloadFile(filename, content, mimeType = 'text/markdown') {
         const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
@@ -538,7 +511,6 @@ const Utils = {
         }, 100);
     },
 
-    /* Calculate approximate token count (rough: 1 token ≈ 4 chars for English) */
     estimateTokens(text) {
         if (!text) return 0;
         return Math.ceil(text.length / 4);
@@ -573,9 +545,6 @@ const ModelManager = {
         return m ? (m.contextLength || 4096) : 4096;
     },
 
-    /**
-     * Add a custom free model to user's list
-     */
     addModel(modelId, customName) {
         if (!modelId || typeof modelId !== 'string') {
             return { success: false, message: 'Enter a valid model ID.' };
@@ -612,9 +581,6 @@ const ModelManager = {
         return { success: true, message: `"${newModel.name}" added.` };
     },
 
-    /**
-     * Remove a model from the list
-     */
     removeModel(modelId) {
         const idx = State.availableModels.findIndex(m => m.id === modelId);
         if (idx === -1) {
@@ -633,9 +599,6 @@ const ModelManager = {
         return { success: true, message: `"${removed.name}" removed.` };
     },
 
-    /**
-     * Restore all default free models
-     */
     restoreDefaults() {
         State.availableModels = JSON.parse(JSON.stringify(CONFIG.FREE_MODELS_REGISTRY));
         Storage.saveModels();
@@ -646,9 +609,6 @@ const ModelManager = {
         }
     },
 
-    /**
-     * Search models by name, provider, or ID
-     */
     search(query) {
         if (!query || !query.trim()) return State.availableModels;
         const q = query.toLowerCase().trim();
@@ -660,9 +620,6 @@ const ModelManager = {
         );
     },
 
-    /**
-     * Group models by provider (for display)
-     */
     getGroupedByProvider(models) {
         const list = models || State.availableModels;
         const groups = {};
@@ -670,32 +627,22 @@ const ModelManager = {
             if (!groups[m.provider]) groups[m.provider] = [];
             groups[m.provider].push(m);
         });
-        /* Sort each group alphabetically by name */
         Object.values(groups).forEach(arr =>
             arr.sort((a, b) => a.name.localeCompare(b.name))
         );
         return groups;
     },
 
-    /**
-     * Get unique provider names sorted
-     */
     getProviders() {
         return [...new Set(State.availableModels.map(m => m.provider))].sort();
     },
 
-    /**
-     * Get the model bound to a specific chat session
-     */
     getModelForChat(chatId) {
         const chat = State.chats[chatId];
         if (!chat) return State.selectedModelId;
         return chat.modelId || State.selectedModelId;
     },
 
-    /**
-     * Count total models in list
-     */
     count() {
         return State.availableModels.length;
     }
@@ -705,7 +652,6 @@ const ModelManager = {
 /* ── 3.2 DOM References Cache ── */
 const DOM = {
 
-    /* Loading */
     loadingScreen: null,
     progressBar: null,
     loadingPercent: null,
@@ -714,43 +660,33 @@ const DOM = {
     errorBox: null,
     errorMessage: null,
 
-    /* App Shell */
     appContainer: null,
     sidebarOverlay: null,
     sidebar: null,
     historyList: null,
 
-    /* Top Bar */
     modelBadge: null,
     statusBadge: null,
 
-    /* Chat */
     welcomeScreen: null,
     chatArea: null,
     inputText: null,
     sendBtn: null,
 
-    /* Modals */
     settingsModal: null,
     modelPickerModal: null,
     confirmDialog: null,
 
-    /* Modal inner containers (for dynamic rendering) */
     settingsBody: null,
     modelPickerBody: null,
     confirmBody: null,
 
-    /* Toast */
     toastContainer: null,
 
-    /* Templates */
     tmplUserMsg: null,
     tmplAssistantMsg: null,
     tmplToast: null,
 
-    /**
-     * Cache all DOM element references
-     */
     cache() {
         const get = id => document.getElementById(id);
 
@@ -785,7 +721,7 @@ const DOM = {
 
         this.toastContainer = get('toastContainer');
 
-        this.tmplUserMsg     = get('tmplUserMsg');
+        this.tmplUserMsg      = get('tmplUserMsg');
         this.tmplAssistantMsg = get('tmplAssistantMsg');
         this.tmplToast       = get('tmplToast');
     }
@@ -802,7 +738,6 @@ const Toast = {
 
         const id = `toast-${++this._counter}`;
 
-        /* Build toast element from template or create fresh */
         let toast;
         if (DOM.tmplToast) {
             const frag = DOM.tmplToast.content.cloneNode(true);
@@ -810,10 +745,7 @@ const Toast = {
         } else {
             toast = document.createElement('div');
             toast.className = 'toast-notification';
-            toast.innerHTML = `
-                <span class="toast-icon">✦</span>
-                <span class="toast-message"></span>
-            `;
+            toast.innerHTML = '<span class="toast-icon">✦</span><span class="toast-message"></span>';
         }
 
         toast.id = id;
@@ -837,9 +769,9 @@ const Toast = {
         });
     },
 
-    success(msg, dur)    { return this.show(msg, 'success', dur); },
-    error(msg, dur)      { return this.show(msg, 'error', dur || 5000); },
-    warning(msg, dur)    { return this.show(msg, 'warning', dur || 4000); },
+    success(msg, dur) { return this.show(msg, 'success', dur); },
+    error(msg, dur)   { return this.show(msg, 'error', dur || 5000); },
+    warning(msg, dur) { return this.show(msg, 'warning', dur || 4000); },
 
     _remove(id) {
         const el = document.getElementById(id);
@@ -850,7 +782,7 @@ const Toast = {
 };
 /**
  * ============================================================
- *  PART 4: LOADING ENGINE, INITIALIZATION
+ *  PART 4: LOADING ENGINE & INITIALIZATION
  * ============================================================
  */
 
@@ -922,16 +854,6 @@ const LoadingEngine = {
         if (DOM.errorMessage) DOM.errorMessage.textContent = message;
     },
 
-    skip() {
-        this._cleanup();
-        if (DOM.loadingScreen) DOM.loadingScreen.classList.add('hidden');
-        if (DOM.appContainer) DOM.appContainer.style.display = 'flex';
-        if (DOM.statusBadge) {
-            DOM.statusBadge.textContent = 'No Key';
-            DOM.statusBadge.className = 'status-badge error';
-        }
-    },
-
     _cleanup() {
         clearInterval(this._progInterval);
         clearInterval(this._tipInterval);
@@ -939,35 +861,27 @@ const LoadingEngine = {
 };
 
 
-/* ── 4.2 API Key Validator ── */
+/* ── 4.2 API Key Validator (via Cloudflare proxy) ── */
 const APIValidator = {
 
-    async validateKey(key) {
-        if (!Security.isValidKey(key)) return false;
-
+    async validateKey() {
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 10000);
 
-            const res = await fetch(CONFIG.OPENROUTER_MODELS_URL, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${key}`,
-                    'HTTP-Referer': CONFIG.SITE_URL,
-                    'X-Title': CONFIG.SITE_NAME
-                },
+            const res = await fetch(CONFIG.PROXY_VALIDATE_URL, {
                 signal: controller.signal
             });
 
             clearTimeout(timeout);
 
-            if (res.status === 401 || res.status === 403) return false;
-            if (res.status === 429) return true;
-            return res.ok;
+            if (!res.ok) return false;
+            const data = await res.json();
+            return data.valid === true;
 
         } catch (e) {
             if (e.name === 'AbortError') return false;
-            console.warn('API validation network error (key may be valid):', e.message);
+            console.warn('Validation network error:', e.message);
             return true;
         }
     }
@@ -978,42 +892,27 @@ const APIValidator = {
 const Init = {
 
     async run() {
-        /* 1. Cache DOM */
         DOM.cache();
-
-        /* 2. Load persisted data */
         Storage.loadSettings();
         Storage.loadModels();
         Storage.loadSelectedModel();
         Storage.loadChats();
 
-        /* 3. Show loading screen */
         LoadingEngine.start();
+        LoadingEngine._setStatus('Checking API key...');
 
-        /* 4. Check API key */
-        if (!Security.isValidKey(API_KEY)) {
-            LoadingEngine.fail(CONFIG.ERRORS.NO_API_KEY);
-            return;
-        }
-
-        /* 5. Validate key with OpenRouter */
-        LoadingEngine._setStatus('Validating API key...');
-
-        const valid = await APIValidator.validateKey(API_KEY);
+        const valid = await APIValidator.validateKey();
 
         if (valid) {
             State.apiKeyValid = true;
             LoadingEngine.succeed();
-
-            /* 6. Boot UI after loading screen fades */
-            setTimeout(() => {
-                UI.boot();
-            }, 600);
+            setTimeout(() => { UI.boot(); }, 600);
         } else {
-            LoadingEngine.fail(CONFIG.ERRORS.INVALID_KEY);
+            LoadingEngine.fail(CONFIG.ERRORS.NO_API_KEY);
         }
     }
 };
+
 /**
  * ============================================================
  *  PART 5: MODAL SYSTEM, SETTINGS UI & CONFIRM DIALOG
@@ -1031,11 +930,10 @@ const Modal = {
         modal.style.display = 'flex';
         State.activeModal = modalId;
 
-        /* Re-trigger scale-in animation */
         const content = modal.querySelector('.modal-content');
         if (content) {
             content.style.animation = 'none';
-            content.offsetHeight; /* reflow */
+            content.offsetHeight;
             content.style.animation = '';
         }
     },
@@ -1058,7 +956,6 @@ const Modal = {
     },
 
     initEvents() {
-        /* Close buttons with data-close attribute */
         document.addEventListener('click', (e) => {
             const closeBtn = e.target.closest('.close-modal-btn');
             if (closeBtn) {
@@ -1067,14 +964,12 @@ const Modal = {
             }
         });
 
-        /* Click overlay to close */
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal-overlay') && e.target.style.display === 'flex') {
                 this.close(e.target.id);
             }
         });
 
-        /* Escape key */
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (State.activeModal) {
@@ -1095,9 +990,6 @@ const SettingsUI = {
         this.render();
     },
 
-    /**
-     * Render the entire settings modal body dynamically
-     */
     render() {
         if (!DOM.settingsBody) return;
 
@@ -1105,7 +997,6 @@ const SettingsUI = {
         const sysPrompt = s.systemPrompt || CONFIG.DEFAULT_SYSTEM_PROMPT;
 
         DOM.settingsBody.innerHTML = `
-            <!-- Generation Settings -->
             <div class="settings-section-title">Generation</div>
 
             <div class="settings-field">
@@ -1162,7 +1053,6 @@ const SettingsUI = {
                 </div>
             </div>
 
-            <!-- Actions -->
             <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-xl); padding-top: var(--space-lg); border-top: 1px solid var(--color-border);">
                 <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
                 <button class="btn btn-secondary" id="resetSettingsBtn">Reset to Default</button>
@@ -1173,7 +1063,6 @@ const SettingsUI = {
     },
 
     _bindEvents() {
-        /* Live value displays */
         const pairs = [
             ['setTemperature', 'setTempVal'],
             ['setMaxTokens', 'setTokensVal'],
@@ -1185,23 +1074,12 @@ const SettingsUI = {
             const input = document.getElementById(inputId);
             const val = document.getElementById(valId);
             if (input && val) {
-                input.addEventListener('input', () => {
-                    val.textContent = input.value;
-                });
+                input.addEventListener('input', () => { val.textContent = input.value; });
             }
         });
 
-        /* Save */
-        const saveBtn = document.getElementById('saveSettingsBtn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', () => this._save());
-        }
-
-        /* Reset */
-        const resetBtn = document.getElementById('resetSettingsBtn');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', () => this._reset());
-        }
+        document.getElementById('saveSettingsBtn')?.addEventListener('click', () => this._save());
+        document.getElementById('resetSettingsBtn')?.addEventListener('click', () => this._reset());
     },
 
     _save() {
@@ -1227,14 +1105,6 @@ const SettingsUI = {
 /* ── 5.3 Confirm Dialog Controller ── */
 const ConfirmDialog = {
 
-    /**
-     * Show a confirmation dialog
-     * @param {string} title
-     * @param {string} message
-     * @param {string} confirmText - Button text (default "Delete")
-     * @param {boolean} isDanger - Red button style (default true)
-     * @returns {Promise<boolean>} - true if confirmed, false if cancelled
-     */
     show(title, message, confirmText = 'Delete', isDanger = true) {
         return new Promise((resolve) => {
             if (!DOM.confirmDialog || !DOM.confirmBody) {
@@ -1267,21 +1137,13 @@ const ConfirmDialog = {
 };
 
 
-/* ── 5.4 Inline Confirmation Helper ──
- *  For simple yes/no without the full dialog (used in message actions)
- */
+/* ── 5.4 Inline Confirmation Helper ── */
 const InlineConfirm = {
 
     _active: null,
 
-    /**
-     * Replace a button with "Confirm?" state temporarily
-     * @param {HTMLElement} btn - The button to replace
-     * @param {string} confirmLabel
-     * @param {Function} onConfirm
-     */
     activate(btn, confirmLabel = 'Confirm?', onConfirm) {
-        this.cancel(); /* Cancel any existing */
+        this.cancel();
 
         const original = btn.innerHTML;
         const originalClass = btn.className;
@@ -1322,6 +1184,8 @@ const InlineConfirm = {
         this._active = null;
     }
 };
+
+
 /**
  * ============================================================
  *  PART 6: MODEL PICKER, SIDEBAR & SESSION MANAGER
@@ -1338,9 +1202,6 @@ const ModelPicker = {
         this.render();
     },
 
-    /**
-     * Render the full model picker modal body
-     */
     render() {
         if (!DOM.modelPickerBody) return;
 
@@ -1414,7 +1275,6 @@ const ModelPicker = {
     },
 
     _bindEvents() {
-        /* Search */
         const searchInput = document.getElementById('modelSearchInput');
         if (searchInput) {
             searchInput.addEventListener('input', Utils.debounce((e) => {
@@ -1424,54 +1284,38 @@ const ModelPicker = {
             searchInput.focus();
         }
 
-        /* Model selection (event delegation on list) */
         const listEl = document.getElementById('modelListContainer');
         if (listEl) {
             listEl.addEventListener('click', (e) => {
-                /* Handle remove button */
                 const removeBtn = e.target.closest('.model-item-remove');
                 if (removeBtn) {
                     e.stopPropagation();
-                    const removeId = removeBtn.getAttribute('data-remove-id');
-                    this._handleRemove(removeId);
+                    this._handleRemove(removeBtn.getAttribute('data-remove-id'));
                     return;
                 }
 
-                /* Handle model selection */
                 const item = e.target.closest('.model-item');
                 if (item) {
-                    const modelId = item.getAttribute('data-model-id');
-                    this._handleSelect(modelId);
+                    this._handleSelect(item.getAttribute('data-model-id'));
                 }
             });
         }
 
-        /* Add model */
-        const addBtn = document.getElementById('modelAddBtn');
-        if (addBtn) {
-            addBtn.addEventListener('click', () => this._handleAdd());
-        }
+        document.getElementById('modelAddBtn')?.addEventListener('click', () => this._handleAdd());
 
         const addInput = document.getElementById('modelAddInput');
         if (addInput) {
             addInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this._handleAdd();
-                }
+                if (e.key === 'Enter') { e.preventDefault(); this._handleAdd(); }
             });
         }
 
-        /* Restore defaults */
-        const restoreBtn = document.getElementById('modelRestoreBtn');
-        if (restoreBtn) {
-            restoreBtn.addEventListener('click', () => {
-                ModelManager.restoreDefaults();
-                Toast.success('Default models restored');
-                this.render();
-                UI.updateModelBadge();
-            });
-        }
+        document.getElementById('modelRestoreBtn')?.addEventListener('click', () => {
+            ModelManager.restoreDefaults();
+            Toast.success('Default models restored');
+            this.render();
+            UI.updateModelBadge();
+        });
     },
 
     _handleSelect(modelId) {
@@ -1486,7 +1330,7 @@ const ModelPicker = {
         const name = ModelManager.getName(modelId);
         const confirmed = await ConfirmDialog.show(
             'Remove Model',
-            `Remove "${name}" from your model list? This won't affect existing sessions using it.`,
+            `Remove "${name}" from your model list?`,
             'Remove',
             true
         );
@@ -1519,9 +1363,6 @@ const ModelPicker = {
         }
     },
 
-    /**
-     * Re-render just the list portion (for search filtering)
-     */
     _renderList() {
         const models = this._searchQuery
             ? ModelManager.search(this._searchQuery)
@@ -1562,7 +1403,6 @@ const ModelPicker = {
 
         listEl.innerHTML = html;
 
-        /* Rebind list events */
         listEl.addEventListener('click', (e) => {
             const removeBtn = e.target.closest('.model-item-remove');
             if (removeBtn) {
@@ -1599,45 +1439,32 @@ const Sidebar = {
     },
 
     initEvents() {
-        const menuBtn = document.getElementById('menuBtn');
-        if (menuBtn) menuBtn.addEventListener('click', () => this.toggle());
+        document.getElementById('menuBtn')?.addEventListener('click', () => this.toggle());
+        DOM.sidebarOverlay?.addEventListener('click', () => this.close());
 
-        if (DOM.sidebarOverlay) {
-            DOM.sidebarOverlay.addEventListener('click', () => this.close());
-        }
+        document.getElementById('newChatBtn')?.addEventListener('click', () => {
+            SessionManager.create();
+            this.close();
+        });
 
-        const newChatBtn = document.getElementById('newChatBtn');
-        if (newChatBtn) {
-            newChatBtn.addEventListener('click', () => {
-                SessionManager.create();
-                this.close();
-            });
-        }
-
-        const clearBtn = document.getElementById('clearChatBtn');
-        if (clearBtn) {
-            clearBtn.addEventListener('click', async () => {
-                if (Object.keys(State.chats).length === 0) {
-                    Toast.warning('No chats to delete.');
-                    return;
-                }
-                const ok = await ConfirmDialog.show(
-                    'Delete All Chats',
-                    'This will permanently delete all your chat history. This cannot be undone.',
-                    'Delete All',
-                    true
-                );
-                if (ok) {
-                    SessionManager.clearAll();
-                    Toast.error('All chats deleted.');
-                }
-            });
-        }
+        document.getElementById('clearChatBtn')?.addEventListener('click', async () => {
+            if (Object.keys(State.chats).length === 0) {
+                Toast.warning('No chats to delete.');
+                return;
+            }
+            const ok = await ConfirmDialog.show(
+                'Delete All Chats',
+                'This will permanently delete all your chat history. This cannot be undone.',
+                'Delete All',
+                true
+            );
+            if (ok) {
+                SessionManager.clearAll();
+                Toast.error('All chats deleted.');
+            }
+        });
     },
 
-    /**
-     * Render the chat history list in the sidebar
-     */
     renderHistory() {
         if (!DOM.historyList) return;
 
@@ -1660,7 +1487,6 @@ const Sidebar = {
             const chat = State.chats[id];
             const isActive = id === State.currentChatId;
             const modelName = ModelManager.getName(chat.modelId);
-            const timeStr = Utils.formatTime(chat.updatedAt || chat.createdAt);
             const isRenaming = State.renamingChatId === id;
 
             const titleHTML = isRenaming
@@ -1688,42 +1514,32 @@ const Sidebar = {
         if (!DOM.historyList) return;
 
         DOM.historyList.addEventListener('click', async (e) => {
-            /* Delete button */
             const delBtn = e.target.closest('[data-action="delete"]');
             if (delBtn) {
                 e.stopPropagation();
-                const id = delBtn.getAttribute('data-id');
-                await this._deleteChat(id);
+                await this._deleteChat(delBtn.getAttribute('data-id'));
                 return;
             }
 
-            /* Rename button */
             const renBtn = e.target.closest('[data-action="rename"]');
             if (renBtn) {
                 e.stopPropagation();
-                const id = renBtn.getAttribute('data-id');
-                this._startRename(id);
+                this._startRename(renBtn.getAttribute('data-id'));
                 return;
             }
 
-            /* Click to load chat */
             const item = e.target.closest('.history-item');
             if (item && !e.target.closest('.rename-input')) {
                 const id = item.getAttribute('data-chat-id');
-                if (id) {
-                    SessionManager.load(id);
-                    this.close();
-                }
+                if (id) { SessionManager.load(id); this.close(); }
             }
         });
 
-        /* Handle rename input */
         DOM.historyList.addEventListener('keydown', (e) => {
             if (e.target.classList.contains('rename-input')) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    const id = e.target.getAttribute('data-rename-id');
-                    this._finishRename(id, e.target.value);
+                    this._finishRename(e.target.getAttribute('data-rename-id'), e.target.value);
                 }
                 if (e.key === 'Escape') {
                     State.renamingChatId = null;
@@ -1732,11 +1548,9 @@ const Sidebar = {
             }
         });
 
-        /* Finish rename on blur */
         DOM.historyList.addEventListener('focusout', (e) => {
             if (e.target.classList.contains('rename-input')) {
                 const id = e.target.getAttribute('data-rename-id');
-                /* Small delay to allow click events to fire first */
                 setTimeout(() => {
                     if (State.renamingChatId === id) {
                         this._finishRename(id, e.target.value);
@@ -1750,10 +1564,7 @@ const Sidebar = {
         State.renamingChatId = id;
         this.renderHistory();
         const input = DOM.historyList.querySelector(`.rename-input[data-rename-id="${id}"]`);
-        if (input) {
-            input.focus();
-            input.select();
-        }
+        if (input) { input.focus(); input.select(); }
     },
 
     _finishRename(id, newTitle) {
@@ -1775,7 +1586,6 @@ const Sidebar = {
             'Delete',
             true
         );
-
         if (!ok) return;
 
         SessionManager.delete(id);
@@ -1787,9 +1597,6 @@ const Sidebar = {
 /* ── 6.3 Session / Chat Manager ── */
 const SessionManager = {
 
-    /**
-     * Create a new chat session
-     */
     create() {
         const id = Security.generateId();
         State.chats[id] = {
@@ -1805,19 +1612,12 @@ const SessionManager = {
         Sidebar.renderHistory();
     },
 
-    /**
-     * Load a chat session into the UI
-     */
     load(id) {
         State.currentChatId = id;
         const chat = State.chats[id];
 
-        if (!chat) {
-            this.create();
-            return;
-        }
+        if (!chat) { this.create(); return; }
 
-        /* Clear chat area */
         if (DOM.chatArea) DOM.chatArea.innerHTML = '';
 
         if (chat.messages.length === 0) {
@@ -1840,9 +1640,6 @@ const SessionManager = {
         DOM.inputText?.focus();
     },
 
-    /**
-     * Add a message to the current session
-     */
     addMessage(role, content) {
         if (!State.currentChatId || !State.chats[State.currentChatId]) {
             this.create();
@@ -1852,7 +1649,6 @@ const SessionManager = {
         chat.messages.push({ role, content });
         chat.updatedAt = Date.now();
 
-        /* Auto-title from first user message */
         if (chat.title === 'New Chat' && role === 'user') {
             chat.title = content.substring(0, CONFIG.AUTO_TITLE_MAX_LENGTH) +
                 (content.length > CONFIG.AUTO_TITLE_MAX_LENGTH ? '...' : '');
@@ -1862,9 +1658,6 @@ const SessionManager = {
         Storage.saveChats();
     },
 
-    /**
-     * Update the last assistant message content
-     */
     updateLastAssistant(content) {
         if (!State.currentChatId || !State.chats[State.currentChatId]) return;
         const msgs = State.chats[State.currentChatId].messages;
@@ -1874,9 +1667,6 @@ const SessionManager = {
         }
     },
 
-    /**
-     * Delete a specific chat session
-     */
     delete(id) {
         delete State.chats[id];
 
@@ -1887,20 +1677,14 @@ const SessionManager = {
                 return tB - tA;
             });
 
-            if (remaining.length > 0) {
-                this.load(remaining[0]);
-            } else {
-                this.create();
-            }
+            if (remaining.length > 0) { this.load(remaining[0]); }
+            else { this.create(); }
         }
 
         Storage.saveChats();
         Sidebar.renderHistory();
     },
 
-    /**
-     * Delete all chats
-     */
     clearAll() {
         Storage.clearAllChats();
         if (DOM.chatArea) DOM.chatArea.innerHTML = '';
@@ -1909,24 +1693,15 @@ const SessionManager = {
         Sidebar.renderHistory();
     },
 
-    /**
-     * Get messages for the current session (for API call)
-     */
     getCurrentMessages() {
         if (!State.currentChatId || !State.chats[State.currentChatId]) return [];
         return State.chats[State.currentChatId].messages;
     },
 
-    /**
-     * Get the model ID for the current session
-     */
     getCurrentModelId() {
         return ModelManager.getModelForChat(State.currentChatId);
     },
 
-    /**
-     * Export current session as Markdown
-     */
     exportCurrentAsMarkdown() {
         const chat = State.chats[State.currentChatId];
         if (!chat || chat.messages.length === 0) {
@@ -1952,9 +1727,6 @@ const SessionManager = {
         Toast.success('Chat exported as Markdown');
     },
 
-    /**
-     * Export current session as plain text
-     */
     exportCurrentAsText() {
         const chat = State.chats[State.currentChatId];
         if (!chat || chat.messages.length === 0) {
@@ -1976,9 +1748,6 @@ const SessionManager = {
         Toast.success('Chat exported as text');
     },
 
-    /**
-     * Copy all messages from current session
-     */
     copyCurrentChat() {
         const chat = State.chats[State.currentChatId];
         if (!chat || chat.messages.length === 0) {
@@ -1998,9 +1767,10 @@ const SessionManager = {
         });
     }
 };
+
 /**
  * ============================================================
- *  PART 7: MESSAGE RENDERING, MARKDOWN PARSER & EXPORT MENU
+ *  PART 7: MESSAGE RENDERING, MARKDOWN PARSER & EXPORT
  * ============================================================
  */
 
@@ -2008,17 +1778,12 @@ const SessionManager = {
 /* ── 7.1 Markdown Parser ── */
 const Markdown = {
 
-    /**
-     * Parse markdown text into safe HTML
-     * Handles: code blocks, inline code, bold, italic, links, lists, headings
-     */
     parse(text) {
         if (!text) return '';
 
-        /* 1. Escape HTML first to prevent XSS */
         let html = Security.escapeHTML(text);
 
-        /* 2. Code blocks: ```lang\n...\n``` */
+        /* Code blocks */
         html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
             const language = lang || 'code';
             const escapedCode = code.trim();
@@ -2034,39 +1799,39 @@ const Markdown = {
             </div>`;
         });
 
-        /* 3. Inline code: `code` */
+        /* Inline code */
         html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 
-        /* 4. Bold: **text** */
+        /* Bold */
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-        /* 5. Italic: *text* (not inside bold) */
+        /* Italic */
         html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
 
-        /* 6. Headings: ### text (only h3-h6 to avoid wrapping issues) */
+        /* Headings */
         html = html.replace(/^####\s+(.+)$/gm, '<h4 style="font-size:1rem;font-weight:600;margin:12px 0 6px;">$1</h4>');
         html = html.replace(/^###\s+(.+)$/gm, '<h3 style="font-size:1.125rem;font-weight:700;margin:16px 0 8px;">$1</h3>');
 
-        /* 7. Unordered lists: - item or * item */
+        /* Unordered lists */
         html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
         html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul style="padding-left:20px;margin:8px 0;">$1</ul>');
 
-        /* 8. Ordered lists: 1. item */
+        /* Ordered lists */
         html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
 
-        /* 9. Horizontal rule: --- or *** */
+        /* Horizontal rule */
         html = html.replace(/^[-*]{3,}$/gm, '<hr style="border:none;border-top:1px solid var(--color-border);margin:16px 0;">');
 
-        /* 10. Line breaks */
+        /* Line breaks */
         html = html.replace(/\n\n/g, '</p><p>');
         html = html.replace(/\n/g, '<br>');
 
-        /* 11. Wrap in paragraph if not starting with a block element */
+        /* Wrap in paragraph */
         if (!html.startsWith('<div') && !html.startsWith('<h') && !html.startsWith('<ul') && !html.startsWith('<ol') && !html.startsWith('<hr')) {
             html = `<p>${html}</p>`;
         }
 
-        /* 12. Clean up empty paragraphs */
+        /* Clean up */
         html = html.replace(/<p><\/p>/g, '');
         html = html.replace(/<p>(<div|<h[1-6]|<ul|<ol|<hr)/g, '$1');
         html = html.replace(/(<\/div>|<\/h[1-6]>|<\/ul>|<\/ol>|<hr[^>]*>)<\/p>/g, '$1');
@@ -2079,9 +1844,6 @@ const Markdown = {
 /* ── 7.2 Export Manager ── */
 const ExportManager = {
 
-    /**
-     * Copy code block content (called from inline onclick)
-     */
     async copyCodeBlock(btn) {
         const codeBlock = btn.closest('.code-block-component');
         if (!codeBlock) return;
@@ -2089,8 +1851,7 @@ const ExportManager = {
         const codeEl = codeBlock.querySelector('.code-body code');
         if (!codeEl) return;
 
-        const text = codeEl.textContent;
-        const ok = await Utils.copyToClipboard(text);
+        const ok = await Utils.copyToClipboard(codeEl.textContent);
 
         if (ok) {
             btn.innerHTML = `
@@ -2106,11 +1867,7 @@ const ExportManager = {
         }
     },
 
-    /**
-     * Toggle the export dropdown menu on a message
-     */
     toggleExportMenu(btn) {
-        /* Close any existing export menu */
         document.querySelectorAll('.export-menu').forEach(m => m.remove());
         State.exportMenuOpen = false;
 
@@ -2130,7 +1887,6 @@ const ExportManager = {
             </button>
         `;
 
-        /* Position relative to button */
         const wrapper = btn.closest('.msg-actions') || btn.parentElement;
         if (wrapper) {
             wrapper.style.position = 'relative';
@@ -2139,7 +1895,6 @@ const ExportManager = {
 
         State.exportMenuOpen = true;
 
-        /* Close on outside click */
         const closeHandler = (e) => {
             if (!menu.contains(e.target) && e.target !== btn) {
                 menu.remove();
@@ -2150,7 +1905,6 @@ const ExportManager = {
 
         setTimeout(() => document.addEventListener('click', closeHandler), 10);
 
-        /* Bind menu item clicks */
         menu.addEventListener('click', (e) => {
             const item = e.target.closest('.export-menu-item');
             if (!item) return;
@@ -2184,13 +1938,6 @@ const ExportManager = {
 /* ── 7.3 Message Renderer ── */
 const MessageRenderer = {
 
-    /**
-     * Render a user message in the chat area
-     * @param {string} text - Message content
-     * @param {number} msgIndex - Index in the messages array
-     * @param {boolean} animate - Whether to animate in
-     * @returns {HTMLElement|null}
-     */
     renderUser(text, msgIndex, animate = true) {
         if (!DOM.tmplUserMsg || !DOM.chatArea) return null;
 
@@ -2202,22 +1949,12 @@ const MessageRenderer = {
 
         textEl.textContent = text;
 
-        if (!animate) {
-            msgEl.style.animation = 'none';
-        }
+        if (!animate) msgEl.style.animation = 'none';
 
         DOM.chatArea.appendChild(frag);
         return msgEl;
     },
 
-    /**
-     * Render an assistant message in the chat area
-     * @param {string} text - Message content (markdown)
-     * @param {number} msgIndex - Index in messages array
-     * @param {string|null} modelId - Which model generated this
-     * @param {boolean} animate - Whether to animate in
-     * @returns {{ msgEl, textEl, statusEl } | null}
-     */
     renderAssistant(text, msgIndex, modelId, animate = true) {
         if (!DOM.tmplAssistantMsg || !DOM.chatArea) return null;
 
@@ -2228,15 +1965,12 @@ const MessageRenderer = {
 
         if (!msgEl || !textEl) return null;
 
-        /* Store raw text for copying */
         textEl.setAttribute('data-raw', text || '');
 
-        /* Render markdown */
         if (text) {
             textEl.innerHTML = Markdown.parse(text);
         }
 
-        /* Show model tag if different from current */
         if (modelId && modelId !== State.selectedModelId) {
             const metaRow = document.createElement('div');
             metaRow.className = 'msg-meta-row';
@@ -2244,7 +1978,6 @@ const MessageRenderer = {
             textEl.parentElement.insertBefore(metaRow, textEl.nextSibling);
         }
 
-        /* Word count */
         if (text) {
             const wc = Utils.wordCount(text);
             if (wc > 0) {
@@ -2258,11 +1991,8 @@ const MessageRenderer = {
             }
         }
 
-        if (!animate) {
-            msgEl.style.animation = 'none';
-        }
+        if (!animate) msgEl.style.animation = 'none';
 
-        /* Hide status by default (only shown during streaming) */
         if (statusEl) statusEl.classList.add('hidden');
 
         DOM.chatArea.appendChild(frag);
@@ -2274,9 +2004,6 @@ const MessageRenderer = {
 /* ── 7.4 Main UI Controller ── */
 const UI = {
 
-    /**
-     * Boot the UI after loading screen is done
-     */
     boot() {
         if (State.isInitialized) return;
         State.isInitialized = true;
@@ -2287,7 +2014,6 @@ const UI = {
         this.bindGlobalEvents();
         this.updateModelBadge();
 
-        /* Load last active chat or show welcome */
         if (State.currentChatId && State.chats[State.currentChatId]) {
             SessionManager.load(State.currentChatId);
         } else {
@@ -2298,19 +2024,13 @@ const UI = {
         console.log(`%c${CONFIG.APP_NAME} v${CONFIG.VERSION} ready`, 'color: #000; font-weight: bold; font-size: 14px;');
     },
 
-    /**
-     * Bind all global event listeners
-     */
     bindGlobalEvents() {
-        /* ── Input handling ── */
         if (DOM.inputText) {
-            /* Auto-resize */
             DOM.inputText.addEventListener('input', () => {
                 DOM.inputText.style.height = 'auto';
                 DOM.inputText.style.height = Math.min(DOM.inputText.scrollHeight, 120) + 'px';
             });
 
-            /* Send on Enter */
             DOM.inputText.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -2319,12 +2039,10 @@ const UI = {
             });
         }
 
-        /* ── Send button ── */
         if (DOM.sendBtn) {
             DOM.sendBtn.addEventListener('click', () => Agent.handleSend());
         }
 
-        /* ── Suggestion cards ── */
         document.querySelectorAll('.suggestion-card').forEach(card => {
             card.addEventListener('click', () => {
                 const prompt = card.getAttribute('data-prompt');
@@ -2335,42 +2053,28 @@ const UI = {
             });
         });
 
-        /* ── Settings button ── */
-        const settingsBtn = document.getElementById('openSettingsBtn');
-        if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => {
-                SettingsUI.render();
-                Modal.open('settingsModal');
-            });
-        }
+        document.getElementById('openSettingsBtn')?.addEventListener('click', () => {
+            SettingsUI.render();
+            Modal.open('settingsModal');
+        });
 
-        /* ── Model picker button ── */
-        const modelBtn = document.getElementById('openModelPickerBtn');
-        if (modelBtn) {
-            modelBtn.addEventListener('click', () => {
-                ModelPicker._searchQuery = '';
-                ModelPicker.render();
-                Modal.open('modelPickerModal');
-            });
-        }
+        document.getElementById('openModelPickerBtn')?.addEventListener('click', () => {
+            ModelPicker._searchQuery = '';
+            ModelPicker.render();
+            Modal.open('modelPickerModal');
+        });
 
-        /* ── Export current chat button (in top bar) ── */
-        const exportBtn = document.getElementById('exportChatBtn');
-        if (exportBtn) {
-            exportBtn.addEventListener('click', (e) => {
-                ExportManager.toggleExportMenu(exportBtn);
-            });
-        }
+        document.getElementById('modelBadge')?.addEventListener('click', () => {
+            ModelPicker._searchQuery = '';
+            ModelPicker.render();
+            Modal.open('modelPickerModal');
+        });
 
-        /* ── Chat area event delegation (for message action buttons) ── */
         if (DOM.chatArea) {
             DOM.chatArea.addEventListener('click', (e) => {
                 this._handleChatAreaClick(e);
             });
-        }
 
-        /* ── Close export menu on scroll ── */
-        if (DOM.chatArea) {
             DOM.chatArea.addEventListener('scroll', () => {
                 if (State.exportMenuOpen) {
                     document.querySelectorAll('.export-menu').forEach(m => m.remove());
@@ -2380,11 +2084,7 @@ const UI = {
         }
     },
 
-    /**
-     * Handle clicks inside the chat area (event delegation)
-     */
     _handleChatAreaClick(e) {
-        /* ── User message: edit button ── */
         const editBtn = e.target.closest('.edit-btn');
         if (editBtn) {
             const msgEl = editBtn.closest('.message');
@@ -2392,8 +2092,7 @@ const UI = {
             return;
         }
 
-        /* ── User message: copy button ── */
-        const userCopyBtn = e.target.closest('.copy-btn');
+        const userCopyBtn = e.target.closest('.user-msg .copy-btn');
         if (userCopyBtn) {
             const msgEl = userCopyBtn.closest('.message');
             if (msgEl) {
@@ -2410,8 +2109,7 @@ const UI = {
             return;
         }
 
-        /* ── User message: delete button ── */
-        const userDelBtn = e.target.closest('.delete-btn');
+        const userDelBtn = e.target.closest('.user-msg .delete-btn');
         if (userDelBtn) {
             const msgEl = userDelBtn.closest('.message');
             if (msgEl) {
@@ -2422,8 +2120,7 @@ const UI = {
             return;
         }
 
-        /* ── Assistant message: copy button ── */
-        const asstCopyBtn = e.target.closest('.copy-btn');
+        const asstCopyBtn = e.target.closest('.assistant-msg .copy-btn');
         if (asstCopyBtn) {
             const msgEl = asstCopyBtn.closest('.message');
             if (msgEl) {
@@ -2439,14 +2136,12 @@ const UI = {
             return;
         }
 
-        /* ── Assistant message: export/menu button ── */
         const exportMsgBtn = e.target.closest('.export-btn');
         if (exportMsgBtn) {
             ExportManager.toggleExportMenu(exportMsgBtn);
             return;
         }
 
-        /* ── Assistant message: regenerate button ── */
         const regenBtn = e.target.closest('.regen-btn');
         if (regenBtn) {
             const msgEl = regenBtn.closest('.message');
@@ -2454,8 +2149,7 @@ const UI = {
             return;
         }
 
-        /* ── Assistant message: delete button ── */
-        const asstDelBtn = e.target.closest('.delete-btn');
+        const asstDelBtn = e.target.closest('.assistant-msg .delete-btn');
         if (asstDelBtn) {
             const msgEl = asstDelBtn.closest('.message');
             if (msgEl) {
@@ -2467,22 +2161,16 @@ const UI = {
         }
     },
 
-    /* ── Message Action Handlers ── */
-
     _handleEditUserMsg(msgEl) {
         const textEl = msgEl.querySelector('.msg-text');
         if (!textEl || !DOM.inputText) return;
 
-        const oldText = textEl.textContent;
-
-        /* Visual editing state */
         document.querySelectorAll('.user-msg.editing').forEach(el => el.classList.remove('editing'));
         msgEl.classList.add('editing');
 
-        DOM.inputText.value = oldText;
+        DOM.inputText.value = textEl.textContent;
         DOM.inputText.focus();
 
-        /* Remove editing state on input change */
         const removeEdit = () => {
             msgEl.classList.remove('editing');
             DOM.inputText.removeEventListener('input', removeEdit);
@@ -2493,22 +2181,18 @@ const UI = {
     _handleDeleteUserMsg(msgEl) {
         const allMsgs = Array.from(DOM.chatArea.querySelectorAll('.message'));
         const domIdx = allMsgs.indexOf(msgEl);
-
-        /* Remove from state: each message element corresponds to a message in the array */
-        /* We need to figure out the state index from the DOM index */
-        const stateIdx = this._domIndexToStateIndex(domIdx, allMsgs);
+        const stateIdx = domIdx;
 
         if (stateIdx !== null && State.currentChatId && State.chats[State.currentChatId]) {
             State.chats[State.currentChatId].messages.splice(stateIdx, 1);
             Storage.saveChats();
         }
 
-        /* Also remove the next assistant message if it exists (keep pairs clean) */
         if (domIdx + 1 < allMsgs.length) {
             const nextEl = allMsgs[domIdx + 1];
             if (nextEl.classList.contains('assistant-msg')) {
-                const nextStateIdx = this._domIndexToStateIndex(domIdx + 1, allMsgs);
-                if (nextStateIdx !== null) {
+                const nextStateIdx = domIdx;
+                if (nextStateIdx !== null && State.chats[State.currentChatId]) {
                     State.chats[State.currentChatId].messages.splice(nextStateIdx, 1);
                 }
                 nextEl.remove();
@@ -2527,10 +2211,9 @@ const UI = {
     _handleDeleteAsstMsg(msgEl) {
         const allMsgs = Array.from(DOM.chatArea.querySelectorAll('.message'));
         const domIdx = allMsgs.indexOf(msgEl);
-        const stateIdx = this._domIndexToStateIndex(domIdx, allMsgs);
 
-        if (stateIdx !== null && State.currentChatId && State.chats[State.currentChatId]) {
-            State.chats[State.currentChatId].messages.splice(stateIdx, 1);
+        if (domIdx !== null && State.currentChatId && State.chats[State.currentChatId]) {
+            State.chats[State.currentChatId].messages.splice(domIdx, 1);
             Storage.saveChats();
         }
 
@@ -2546,11 +2229,10 @@ const UI = {
 
         const allMsgs = Array.from(DOM.chatArea.querySelectorAll('.message'));
         const domIdx = allMsgs.indexOf(msgEl);
-        const stateIdx = this._domIndexToStateIndex(domIdx, allMsgs);
+        const stateIdx = domIdx;
 
         if (stateIdx === null || !State.currentChatId) return;
 
-        /* Find the preceding user message */
         let userText = null;
         if (stateIdx > 0 && State.chats[State.currentChatId].messages[stateIdx - 1].role === 'user') {
             userText = State.chats[State.currentChatId].messages[stateIdx - 1].content;
@@ -2561,16 +2243,13 @@ const UI = {
             return;
         }
 
-        /* Remove the old assistant message from state and DOM */
         State.chats[State.currentChatId].messages.splice(stateIdx, 1);
         msgEl.remove();
 
-        /* Remove all messages after the user message from DOM */
         const remainingMsgs = Array.from(DOM.chatArea.querySelectorAll('.message'));
         for (let i = domIdx; i < remainingMsgs.length; i++) {
             remainingMsgs[i].remove();
-            /* Also remove from state */
-            const sIdx = this._domIndexToStateIndex(domIdx, remainingMsgs);
+            const sIdx = domIdx;
             if (sIdx !== null && State.chats[State.currentChatId]) {
                 State.chats[State.currentChatId].messages.splice(sIdx, 1);
             }
@@ -2578,7 +2257,6 @@ const UI = {
 
         Storage.saveChats();
 
-        /* Show regenerating label */
         const label = document.createElement('div');
         label.className = 'regenerating-label';
         label.textContent = 'Regenerating response...';
@@ -2587,19 +2265,8 @@ const UI = {
         await Utils.sleep(300);
         label.remove();
 
-        /* Re-generate */
         await Agent.generateResponse(userText);
     },
-
-    /**
-     * Map a DOM index to the state messages array index
-     */
-    _domIndexToStateIndex(domIdx, allMsgs) {
-        /* Since we render messages in order and each DOM message = one state message */
-        return domIdx;
-    },
-
-    /* ── UI State Helpers ── */
 
     showWelcome() {
         if (DOM.welcomeScreen) {
@@ -2619,9 +2286,7 @@ const UI = {
 
     scrollToBottom() {
         requestAnimationFrame(() => {
-            if (DOM.chatArea) {
-                DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight;
-            }
+            if (DOM.chatArea) DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight;
         });
     },
 
@@ -2642,11 +2307,8 @@ const UI = {
     updateModelBadge() {
         if (!DOM.modelBadge) return;
         const modelId = SessionManager.getCurrentModelId();
-        const name = ModelManager.getName(modelId);
-        DOM.modelBadge.textContent = name;
+        DOM.modelBadge.textContent = ModelManager.getName(modelId);
     },
-
-    /* ── Convenience render wrappers ── */
 
     renderUserMessage(text, idx, save = true) {
         this.hideWelcome();
@@ -2666,48 +2328,30 @@ const UI = {
 };
 /**
  * ============================================================
- *  PART 8: OPENROUTER CLIENT, AGENT LOOP & EVENT BINDINGS
+ *  PART 8: API CLIENT, AGENT LOOP & EVENT BINDINGS
  * ============================================================
  */
 
 
-/* ── 8.1 OpenRouter API Client ── */
+/* ── 8.1 OpenRouter API Client (via Cloudflare proxy) ── */
 const OpenRouterClient = {
 
-    /**
-     * Build the messages array for the OpenRouter API
-     * Includes system prompt + conversation history (respecting maxHistory)
-     */
     buildMessages(chatMessages, modelId) {
         const messages = [];
 
-        /* System prompt */
         const sysPrompt = State.settings.systemPrompt || CONFIG.DEFAULT_SYSTEM_PROMPT;
         messages.push({ role: 'system', content: sysPrompt });
 
-        /* Get history slice (last N message pairs) */
         const maxMsgs = State.settings.maxHistory * 2;
         const history = chatMessages.slice(-maxMsgs);
 
         history.forEach(msg => {
-            messages.push({
-                role: msg.role,
-                content: msg.content
-            });
+            messages.push({ role: msg.role, content: msg.content });
         });
 
         return messages;
     },
 
-    /**
-     * Make a streaming chat completion request to OpenRouter
-     * @param {Array} messages - OpenRouter format messages
-     * @param {string} modelId - Model to use
-     * @param {Function} onChunk - Called with each text chunk
-     * @param {Function} onDone - Called when streaming is complete
-     * @param {Function} onError - Called on error
-     * @returns {AbortController} - For cancelling
-     */
     streamChat(messages, modelId, onChunk, onDone, onError) {
         const controller = new AbortController();
 
@@ -2720,14 +2364,9 @@ const OpenRouterClient = {
             top_p: State.settings.topP
         };
 
-        fetch(CONFIG.OPENROUTER_CHAT_URL, {
+        fetch(CONFIG.PROXY_CHAT_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`,
-                'HTTP-Referer': CONFIG.SITE_URL,
-                'X-Title': CONFIG.SITE_NAME
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
             signal: controller.signal
         })
@@ -2748,16 +2387,12 @@ const OpenRouterClient = {
 
             function read() {
                 reader.read().then(({ done, value }) => {
-                    if (done) {
-                        onDone();
-                        return;
-                    }
+                    if (done) { onDone(); return; }
 
                     buffer += decoder.decode(value, { stream: true });
 
-                    /* Process SSE lines */
                     const lines = buffer.split('\n');
-                    buffer = lines.pop() || ''; /* Keep incomplete line in buffer */
+                    buffer = lines.pop() || '';
 
                     for (const line of lines) {
                         const trimmed = line.trim();
@@ -2773,7 +2408,7 @@ const OpenRouterClient = {
                                 onChunk(content);
                             }
                         } catch (parseErr) {
-                            /* Skip malformed JSON chunks */
+                            /* Skip malformed chunks */
                         }
                     }
 
@@ -2847,11 +2482,7 @@ const ErrorClassifier = {
 /* ── 8.4 Agent Core ── */
 const Agent = {
 
-    /**
-     * Handle the send button / Enter key press
-     */
     async handleSend() {
-        /* If generating, stop */
         if (State.isGenerating) {
             State.stopGenerationFlag = true;
             if (State.currentAbortController) {
@@ -2862,54 +2493,41 @@ const Agent = {
             return;
         }
 
-        /* Validate input */
         const text = (DOM.inputText?.value || '').trim();
         if (!text) return;
 
-        /* Validate API key */
-        if (!Security.isValidKey(API_KEY)) {
+        if (!State.apiKeyValid) {
             Toast.error(CONFIG.ERRORS.NO_API_KEY);
             return;
         }
 
-        /* Validate model */
         const modelId = SessionManager.getCurrentModelId();
         if (!modelId) {
             Toast.error('No model selected. Open the Model Picker to select one.');
             return;
         }
 
-        /* Truncate if too long */
         let sendText = text;
         if (sendText.length > CONFIG.MAX_INPUT_LENGTH) {
             sendText = sendText.substring(0, CONFIG.MAX_INPUT_LENGTH);
             Toast.warning(`Message truncated to ${CONFIG.MAX_INPUT_LENGTH} characters.`);
         }
 
-        /* Clear input */
         DOM.inputText.value = '';
         DOM.inputText.style.height = 'auto';
 
-        /* Render user message */
         UI.renderUserMessage(sendText, null, true);
 
-        /* Generate response */
         await this.generateResponse(sendText);
     },
 
-    /**
-     * Generate a response for the given user input
-     * Handles streaming, error recovery, and retry
-     */
     async generateResponse(userText) {
         const modelId = SessionManager.getCurrentModelId();
         if (!modelId) return;
 
-        /* Build messages array */
         const chatMessages = SessionManager.getCurrentMessages();
         const apiMessages = OpenRouterClient.buildMessages(chatMessages, modelId);
 
-        /* Setup streaming UI */
         const { msgEl, textEl, statusEl } = UI.renderAssistantMessage('', null, modelId, false) || {};
 
         if (!textEl) return;
@@ -2922,10 +2540,8 @@ const Agent = {
         State.stopGenerationFlag = false;
 
         let fullText = '';
-        let lastChunkTime = Date.now();
         let streamActive = false;
 
-        /* Retry loop */
         for (let attempt = 0; attempt <= CONFIG.RETRY.MAX_ATTEMPTS; attempt++) {
             if (State.stopGenerationFlag) break;
 
@@ -2943,54 +2559,43 @@ const Agent = {
 
                 fullText = '';
                 streamActive = false;
-                lastChunkTime = Date.now();
 
                 State.currentAbortController = OpenRouterClient.streamChat(
                     apiMessages,
                     modelId,
 
-                    /* onChunk */
                     (chunk) => {
                         if (State.stopGenerationFlag) return;
 
                         streamActive = true;
-                        lastChunkTime = Date.now();
                         fullText += chunk;
 
-                        /* Update UI with parsed markdown + cursor */
                         textEl.setAttribute('data-raw', fullText);
                         textEl.innerHTML = Markdown.parse(fullText) + '<span class="streaming-cursor"></span>';
                         UI.scrollToBottom();
 
-                        /* Update status */
                         if (statusLabel) statusLabel.textContent = 'Responding...';
                     },
 
-                    /* onDone */
                     () => {
                         streamActive = false;
                     },
 
-                    /* onError */
                     (error) => {
                         streamActive = false;
                         throw error;
                     }
                 );
 
-                /* Wait for stream to finish (poll since we can't await the callback-based stream) */
                 await this._waitForStreamComplete(() => !streamActive || State.stopGenerationFlag);
 
-                /* Success — break out of retry loop */
                 break;
 
             } catch (error) {
-                /* If user stopped, don't retry */
                 if (State.stopGenerationFlag) break;
 
                 const friendlyMsg = ErrorClassifier.classify(error);
 
-                /* Don't retry auth errors or context errors */
                 if (error instanceof OpenRouterError) {
                     if ([401, 403, 404].includes(error.statusCode)) {
                         this._showError(textEl, statusEl, friendlyMsg);
@@ -2998,35 +2603,26 @@ const Agent = {
                     }
                 }
 
-                /* Last attempt failed */
                 if (attempt >= CONFIG.RETRY.MAX_ATTEMPTS) {
                     this._showError(textEl, statusEl, friendlyMsg);
                     break;
                 }
 
-                /* Otherwise, retry */
                 console.warn(`Attempt ${attempt + 1} failed, retrying...`, error.message);
             }
         }
 
-        /* ── Finalize ── */
-
-        /* Remove streaming cursor */
         const cursor = textEl.querySelector('.streaming-cursor');
         if (cursor) cursor.remove();
 
-        /* Hide status */
         if (statusEl) statusEl.classList.add('hidden');
 
-        /* If we have text, save it and render final markdown */
         if (fullText.trim()) {
             textEl.setAttribute('data-raw', fullText);
             textEl.innerHTML = Markdown.parse(fullText);
 
-            /* Add word count */
             const wc = Utils.wordCount(fullText);
             if (wc > 0) {
-                /* Remove existing word count if any */
                 const existing = msgEl?.querySelector('.msg-word-count');
                 if (existing) existing.remove();
 
@@ -3039,17 +2635,14 @@ const Agent = {
                 }
             }
 
-            /* Save to session */
             SessionManager.updateLastAssistant(fullText);
 
-            /* If this was a new assistant message (not saved yet), add it */
             const msgs = SessionManager.getCurrentMessages();
             if (msgs.length === 0 || msgs[msgs.length - 1].role !== 'assistant') {
                 SessionManager.addMessage('assistant', fullText);
             }
 
         } else if (!State.stopGenerationFlag) {
-            /* Empty response — show warning */
             textEl.innerHTML = `<span style="color: var(--color-warning); font-style: italic;">${Security.escapeHTML(CONFIG.ERRORS.EMPTY_RESPONSE)}</span>`;
         }
 
@@ -3058,28 +2651,17 @@ const Agent = {
         UI.scrollToBottom();
     },
 
-    /**
-     * Wait for a condition to become true
-     */
     _waitForStreamComplete(conditionFn) {
         return new Promise((resolve) => {
             const check = () => {
-                if (conditionFn()) {
-                    resolve();
-                    return;
-                }
+                if (conditionFn()) { resolve(); return; }
                 setTimeout(check, 50);
             };
             check();
-
-            /* Safety timeout: 5 minutes max */
             setTimeout(resolve, 300000);
         });
     },
 
-    /**
-     * Show an error in the assistant message area
-     */
     _showError(textEl, statusEl, message) {
         if (statusEl) statusEl.classList.add('hidden');
         if (textEl) {
@@ -3090,16 +2672,12 @@ const Agent = {
 };
 
 
-/* ── 8.5 Top Bar Export Menu (for exporting entire chat) ── */
+/* ── 8.5 Top Bar Export Menu ── */
 const TopBarExport = {
 
     init() {
         const exportBtn = document.getElementById('exportChatBtn');
         if (!exportBtn) return;
-
-        /* The button click is handled in UI.bindGlobalEvents already */
-        /* But we need to customize the menu for top-bar export */
-        const originalToggle = ExportManager.toggleExportMenu.bind(ExportManager);
 
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -3144,15 +2722,9 @@ const TopBarExport = {
 
                 const type = item.getAttribute('data-top-export');
                 switch (type) {
-                    case 'markdown':
-                        SessionManager.exportCurrentAsMarkdown();
-                        break;
-                    case 'text':
-                        SessionManager.exportCurrentAsText();
-                        break;
-                    case 'copy-all':
-                        SessionManager.copyCurrentChat();
-                        break;
+                    case 'markdown': SessionManager.exportCurrentAsMarkdown(); break;
+                    case 'text': SessionManager.exportCurrentAsText(); break;
+                    case 'copy-all': SessionManager.copyCurrentChat(); break;
                 }
 
                 menu.remove();
@@ -3169,21 +2741,18 @@ const KeyboardShortcuts = {
 
     init() {
         document.addEventListener('keydown', (e) => {
-            /* Ctrl/Cmd + Shift + N: New chat */
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
                 e.preventDefault();
                 SessionManager.create();
                 Sidebar.close();
             }
 
-            /* Ctrl/Cmd + Shift + S: Open settings */
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
                 e.preventDefault();
                 SettingsUI.render();
                 Modal.open('settingsModal');
             }
 
-            /* Ctrl/Cmd + Shift + M: Open model picker */
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'M') {
                 e.preventDefault();
                 ModelPicker._searchQuery = '';
@@ -3191,13 +2760,11 @@ const KeyboardShortcuts = {
                 Modal.open('modelPickerModal');
             }
 
-            /* Ctrl/Cmd + Shift + E: Export chat */
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'E') {
                 e.preventDefault();
                 SessionManager.exportCurrentAsMarkdown();
             }
 
-            /* Focus input on / key (when not in an input) */
             if (e.key === '/' && !this._isInInput(e)) {
                 e.preventDefault();
                 if (DOM.inputText) DOM.inputText.focus();
@@ -3212,45 +2779,7 @@ const KeyboardShortcuts = {
 };
 
 
-/* ── 8.7 Boot Sequence ──
- *  This runs immediately when the script loads
- */
-(function boot() {
-    /* Wait for DOM to be ready */
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => Init.run());
-    } else {
-        Init.run();
-    }
-
-    /* Initialize extras once UI is ready (observed via MutationObserver on appContainer) */
-    const observer = new MutationObserver((mutations, obs) => {
-        if (DOM.appContainer && DOM.appContainer.style.display === 'flex') {
-            obs.disconnect();
-            /* Small delay to ensure all DOM refs are valid */
-            setTimeout(() => {
-                TopBarExport.init();
-                KeyboardShortcuts.init();
-            }, 100);
-        }
-    });
-
-    /* Start observing once DOM is ready */
-    const startObserver = () => {
-        const target = document.getElementById('appContainer');
-        if (target) {
-            observer.observe(target, { attributes: true, attributeFilter: ['style'] });
-        }
-    };
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', startObserver);
-    } else {
-        startObserver();
-    }
-})();
-
-/* ── 8.8 Boot Sequence ── */
+/* ── 8.7 Boot Sequence ── */
 (function boot() {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => Init.run());
