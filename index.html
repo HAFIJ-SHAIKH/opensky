@@ -1,33 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Opensky</title>
-
-<link rel="stylesheet" href="style.css">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opensky</title>
+  <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
-<!-- Loading Screen -->
-<div class="loading-screen" id="loadingScreen">
-  <div class="loader-box">
+<!-- Loading -->
+<div id="loadingScreen" class="loading-screen">
+  <div class="loader-content">
+    <div class="loader-title">Opensky</div>
     <div class="skeleton title"></div>
     <div class="skeleton bar"></div>
-    <p class="loading-text">Loading AI Model...</p>
   </div>
 </div>
 
-<!-- App -->
-<div class="app" id="app">
+<div class="app-container active">
 
-  <div class="chat" id="chat"></div>
+  <!-- Header -->
+  <div class="top-bar">
+    <div class="app-title">Opensky</div>
+    <button id="clearChat">Clear</button>
+  </div>
 
+  <!-- Chat -->
+  <div id="messagesArea" class="chat-area"></div>
+
+  <!-- Input -->
   <div class="input-area">
-    <textarea id="input" placeholder="Ask anything..."></textarea>
-    <button id="send">➤</button>
+    <div class="input-wrapper">
+      <textarea id="inputText" class="input-field" placeholder="Ask anything..."></textarea>
+      <button id="sendBtn" class="send-btn">➤</button>
+    </div>
   </div>
 
 </div>
