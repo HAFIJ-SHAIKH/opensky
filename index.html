@@ -4,365 +4,176 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#000000">
-  <title>Opensky AI</title>
-  
-  <!-- Fonts -->
+  <title>Opensky</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  
-  <!-- Stylesheet -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- ========================================== -->
-  <!-- INLINE SVG ICON SPRITE (Zero Dependencies) -->
-  <!-- ========================================== -->
-  <svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
-    <symbol id="icon-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-    </symbol>
-    <symbol id="icon-stop" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-    </symbol>
-    <symbol id="icon-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-      <line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>
-    </symbol>
-    <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-      <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
-    </symbol>
-    <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-    </symbol>
-    <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-    </symbol>
-    <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-    </symbol>
-    <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="20 6 9 17 4 12"></polyline>
-    </symbol>
-    <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-    </symbol>
-    <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
-    </symbol>
-    <symbol id="icon-bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line>
-    </symbol>
-    <symbol id="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>
-    </symbol>
-    <symbol id="icon-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
-    </symbol>
-  </svg>
-
-  <!-- ========================================== -->
-  <!-- LOADING SCREEN                             -->
-  <!-- ========================================== -->
+  <!-- ============ LOADING SCREEN ============ -->
   <div id="loadingScreen" class="loading-screen">
     <div class="loader-box">
       <div class="loader-icon">
-        <svg width="40" height="40"><use href="#icon-bot"/></svg>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
       </div>
-      <div class="loader-title">Opensky Agent</div>
-      <div class="loader-subtitle">Initializing local neural network</div>
-      
+      <div class="loader-title">Opensky</div>
+      <div class="loader-subtitle">by Hafij Shaikh</div>
       <div class="progress-container">
-        <div class="progress-bar" id="progressBar"></div>
+        <div id="progressBar" class="progress-bar"></div>
       </div>
-      
       <div class="loader-meta">
-        <span id="loadingPercent">0.00%</span>
-        <span id="loadingStatus" class="status-text">Preparing WebAssembly...</span>
+        <span id="loadingPercent">0.0%</span>
+        <span id="loadingStatus" class="status-text">Initializing...</span>
       </div>
-
-      <div class="loader-tips" id="loadingTips">
-        <!-- Tips will rotate here via JS -->
+      <div id="loadingTips" class="loader-tips">
+        <p></p>
       </div>
-      
-      <div id="errorBox" class="error-box" style="display: none;">
+      <div id="errorBox" class="error-box" style="display:none;">
         <strong>Initialization Failed</strong>
         <p id="errorMessage"></p>
       </div>
     </div>
   </div>
 
-  <!-- ========================================== -->
-  <!-- MAIN APPLICATION                           -->
-  <!-- ========================================== -->
-  <div id="appContainer" class="app-container">
-    
-    <!-- Sidebar Overlay (Mobile) -->
+  <!-- ============ APP CONTAINER ============ -->
+  <div id="appContainer" class="app-container" style="display:none;">
+
+    <!-- Sidebar Overlay -->
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
 
     <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <h2>History</h2>
-        <button id="newChatBtn" class="icon-btn" title="New Chat">
-          <svg width="20" height="20"><use href="#icon-plus"/></svg>
-        </button>
+        <h2>Chats</h2>
+        <button class="icon-btn close-modal-btn" data-close="sidebar" style="display:none;"></button>
       </div>
-      <div id="historyList" class="history-list">
-        <!-- Chat history items injected by JS -->
-      </div>
+      <div id="historyList" class="history-list"></div>
       <div class="sidebar-footer">
-        <button id="openToolsBtn" class="sidebar-action-btn">
-          <svg width="16" height="16"><use href="#icon-wrench"/></svg>
-          <span>Explore Tools</span>
+        <button id="newChatBtn" class="sidebar-action-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Chat
+        </button>
+        <button id="clearChatBtn" class="sidebar-action-btn" style="margin-top:4px; color:var(--color-error);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          Delete All Chats
         </button>
       </div>
     </aside>
 
     <!-- Main Content -->
     <main class="main-content">
-      
+
       <!-- Top Bar -->
-      <header class="top-bar">
+      <div class="top-bar">
         <div class="top-bar-left">
-          <button id="menuBtn" class="icon-btn">
-            <svg width="20" height="20"><use href="#icon-menu"/></svg>
+          <button id="menuBtn" class="icon-btn" title="Menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <h1 class="top-bar-title">Opensky</h1>
-          <div id="statusBadge" class="status-badge loading">Loading</div>
+          <span class="top-bar-title">Opensky</span>
+          <button id="modelBadge" class="top-bar-model" title="Change model">—</button>
+          <span id="statusBadge" class="status-badge">...</span>
         </div>
         <div class="top-bar-right">
+          <button id="exportChatBtn" class="icon-btn" title="Export chat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+          <button id="openModelPickerBtn" class="icon-btn" title="Model picker">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
           <button id="openSettingsBtn" class="icon-btn" title="Settings">
-            <svg width="20" height="20"><use href="#icon-settings"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
         </div>
-      </header>
+      </div>
 
-      <!-- Welcome Screen (Shown when chat is empty) -->
+      <!-- Welcome Screen -->
       <div id="welcomeScreen" class="welcome-screen">
         <div class="welcome-icon">
-          <svg width="48" height="48"><use href="#icon-bot"/></svg>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </div>
-        <h2>How can I help you today?</h2>
-        <p>I can search Wikipedia, check the weather, look up crypto prices, and more. All running locally in your browser.</p>
-        
+        <h2>What can I help with?</h2>
+        <p>Ask anything — pick a model that fits your task from the settings icon above.</p>
         <div class="suggestion-grid">
-          <button class="suggestion-card" data-prompt="Tell me a random joke to make me laugh">
-            <strong>Make me laugh</strong>
-            <span>Tell me a random joke</span>
+          <button class="suggestion-card" data-prompt="Explain quantum computing in simple terms">
+            <strong>Explain a concept</strong>
+            <span>Quantum computing in simple terms</span>
           </button>
-          <button class="suggestion-card" data-prompt="What is the current weather in Tokyo?">
-            <strong>Check Weather</strong>
-            <span>Current weather in Tokyo</span>
+          <button class="suggestion-card" data-prompt="Write a Python function to sort a list using merge sort">
+            <strong>Write code</strong>
+            <span>Python merge sort implementation</span>
           </button>
-          <button class="suggestion-card" data-prompt="Search wiki for the history of Artificial Intelligence">
-            <strong>Research</strong>
-            <span>History of AI on Wikipedia</span>
+          <button class="suggestion-card" data-prompt="Give me 10 creative name ideas for a coffee shop">
+            <strong>Help me brainstorm</strong>
+            <span>10 creative coffee shop names</span>
           </button>
-          <button class="suggestion-card" data-prompt="Show me information about the Pokemon Pikachu">
-            <strong>Pokemon Lookup</strong>
-            <span>Find data on Pikachu</span>
+          <button class="suggestion-card" data-prompt="What are the key themes in Shakespeare's Hamlet?">
+            <strong>Analyze text</strong>
+            <span>Key themes in Hamlet</span>
           </button>
         </div>
       </div>
 
-      <!-- Chat Area (Hidden until first message) -->
-      <div id="chatArea" class="chat-area">
-        <!-- Messages injected here -->
-      </div>
+      <!-- Chat Area -->
+      <div id="chatArea" class="chat-area"></div>
 
       <!-- Input Area -->
-      <footer class="input-area">
+      <div class="input-area">
         <div class="input-container">
-          <button id="voiceBtn" class="icon-btn input-icon" title="Voice Input (Coming Soon)" disabled>
-            <svg width="18" height="18"><use href="#icon-mic"/></svg>
-          </button>
-          <textarea id="inputText" placeholder="Ask me anything or use a tool..." rows="1"></textarea>
-          <button id="sendBtn" class="send-btn" disabled>
-            <svg width="20" height="20" class="icon-send"><use href="#icon-send"/></svg>
-            <svg width="20" height="20" class="icon-stop" style="display:none;"><use href="#icon-stop"/></svg>
+          <span class="input-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <textarea id="inputText" rows="1" placeholder="Message Opensky..."></textarea>
+          <button id="sendBtn" class="send-btn" disabled title="Send">
+            <svg class="icon-send" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <svg class="icon-stop" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
           </button>
         </div>
-        <div class="input-disclaimer">
-          Opensky runs 100% locally. No data is sent to external servers. AI may hallucinate.
-        </div>
-      </footer>
+        <div class="input-disclaimer">Opensky may make mistakes. Verify important information.</div>
+      </div>
 
     </main>
   </div>
 
-  <!-- ========================================== -->
-  <!-- MODALS                                     -->
-  <!-- ========================================== -->
-
-  <!-- Settings Modal -->
-  <div id="settingsModal" class="modal-overlay" style="display: none;">
+  <!-- ============ SETTINGS MODAL ============ -->
+  <div id="settingsModal" class="modal-overlay" style="display:none;">
     <div class="modal-content settings-modal">
       <div class="modal-header">
-        <h2>Agent Settings</h2>
+        <h2>Settings</h2>
         <button class="icon-btn close-modal-btn" data-close="settingsModal">
-          <svg width="20" height="20"><use href="#icon-x"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      
-      <div class="modal-body">
-        <!-- System Prompt -->
-        <div class="form-group">
-          <label for="systemPromptInput">System Prompt</label>
-          <textarea id="systemPromptInput" rows="4" placeholder="You are a helpful AI assistant..."></textarea>
-        </div>
-
-        <!-- Tools Configuration -->
-        <div class="form-group">
-          <label>Enabled Tools</label>
-          <div class="tools-grid">
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="wiki" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Wikipedia</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="weather" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Weather</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="crypto" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Crypto</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="pokemon" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Pokemon</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="country" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Countries</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="define" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Dictionary</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="joke" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Jokes</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="advice" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Advice</span>
-            </label>
-            <label class="tool-toggle">
-              <input type="checkbox" class="tool-checkbox" data-tool="bored" checked>
-              <span class="toggle-slider"></span>
-              <span class="tool-label">Boredom</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Advanced Settings -->
-        <div class="form-group">
-          <label>Advanced Parameters</label>
-          <div class="advanced-grid">
-            <div class="param-field">
-              <label for="tempInput">Temperature: <span id="tempValue">0.6</span></label>
-              <input type="range" id="tempInput" min="0" max="1" step="0.1" value="0.6">
-            </div>
-            <div class="param-field">
-              <label for="tokenInput">Max Tokens</label>
-              <input type="number" id="tokenInput" min="50" max="1024" value="400">
-            </div>
-            <div class="param-field">
-              <label for="historyInput">Memory (Turns)</label>
-              <input type="number" id="historyInput" min="2" max="20" value="10">
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button id="resetSettingsBtn" class="btn btn-secondary">Reset to Default</button>
-        <button id="saveSettingsBtn" class="btn btn-primary">Save Changes</button>
-      </div>
+      <div class="modal-body" id="settingsBody"></div>
     </div>
   </div>
 
-  <!-- Tool Explorer Modal -->
-  <div id="toolsModal" class="modal-overlay" style="display: none;">
-    <div class="modal-content tools-modal">
+  <!-- ============ MODEL PICKER MODAL ============ -->
+  <div id="modelPickerModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content model-picker-modal">
       <div class="modal-header">
-        <h2>Available Tools</h2>
-        <button class="icon-btn close-modal-btn" data-close="toolsModal">
-          <svg width="20" height="20"><use href="#icon-x"/></svg>
+        <h2>Models</h2>
+        <button class="icon-btn close-modal-btn" data-close="modelPickerModal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <div class="modal-body tools-explorer-grid">
-        <!-- Wiki -->
-        <div class="tool-info-card" data-tool="wiki">
-          <h3>Wikipedia</h3>
-          <p>Fetches summaries from Wikipedia.</p>
-          <div class="tool-usage"><code>wiki(topic)</code></div>
-        </div>
-        <!-- Weather -->
-        <div class="tool-info-card" data-tool="weather">
-          <h3>Weather</h3>
-          <p>Gets real-time weather using Open-Meteo.</p>
-          <div class="tool-usage"><code>weather(city name)</code></div>
-        </div>
-        <!-- Crypto -->
-        <div class="tool-info-card" data-tool="crypto">
-          <h3>Crypto Prices</h3>
-          <p>Checks USD prices via CoinGecko.</p>
-          <div class="tool-usage"><code>crypto(bitcoin)</code></div>
-        </div>
-        <!-- Pokemon -->
-        <div class="tool-info-card" data-tool="pokemon">
-          <h3>Pokedex</h3>
-          <p>Looks up Pokemon stats and sprites.</p>
-          <div class="tool-usage"><code>pokemon(pikachu)</code></div>
-        </div>
-        <!-- Country -->
-        <div class="tool-info-card" data-tool="country">
-          <h3>Country Info</h3>
-          <p>Capital, population, and flags.</p>
-          <div class="tool-usage"><code>country(japan)</code></div>
-        </div>
-        <!-- Define -->
-        <div class="tool-info-card" data-tool="define">
-          <h3>Dictionary</h3>
-          <p>Gets definitions of English words.</p>
-          <div class="tool-usage"><code>define(serendipity)</code></div>
-        </div>
-        <!-- Joke -->
-        <div class="tool-info-card" data-tool="joke">
-          <h3>Joke API</h3>
-          <p>Returns a random joke.</p>
-          <div class="tool-usage"><code>joke()</code></div>
-        </div>
-        <!-- Advice -->
-        <div class="tool-info-card" data-tool="advice">
-          <h3>Advice Slip</h3>
-          <p>Gives random life advice.</p>
-          <div class="tool-usage"><code>advice()</code></div>
-        </div>
-        <!-- Bored -->
-        <div class="tool-info-card" data-tool="bored">
-          <h3>Activity Finder</h3>
-          <p>Suggests things to do when bored.</p>
-          <div class="tool-usage"><code>bored()</code></div>
-        </div>
-      </div>
+      <div class="modal-body" id="modelPickerBody"></div>
     </div>
   </div>
 
-  <!-- ========================================== -->
-  <!-- TEMPLATES (Used by JS to generate UI)      -->
-  <!-- ========================================== -->
-  
+  <!-- ============ CONFIRM DIALOG ============ -->
+  <div id="confirmDialog" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:420px;">
+      <div class="modal-body" id="confirmBody"></div>
+    </div>
+  </div>
+
+  <!-- ============ TOAST CONTAINER ============ -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ============ TEMPLATES ============ -->
+
   <!-- User Message Template -->
   <template id="tmplUserMsg">
     <div class="message user-msg">
@@ -370,11 +181,14 @@
         <span class="msg-text"></span>
       </div>
       <div class="msg-actions">
-        <button class="icon-btn msg-action-btn edit-btn" title="Edit">
-          <svg width="14" height="14"><use href="#icon-edit"/></svg>
+        <button class="msg-action-btn edit-btn" title="Edit">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
-        <button class="icon-btn msg-action-btn delete-btn" title="Delete">
-          <svg width="14" height="14"><use href="#icon-trash"/></svg>
+        <button class="msg-action-btn copy-btn" title="Copy">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="msg-action-btn delete-btn" title="Delete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
       </div>
     </div>
@@ -383,75 +197,41 @@
   <!-- Assistant Message Template -->
   <template id="tmplAssistantMsg">
     <div class="message assistant-msg">
-      <div class="msg-avatar">
-        <svg width="18" height="18"><use href="#icon-bot"/></svg>
-      </div>
+      <div class="msg-avatar">✦</div>
       <div class="msg-content-wrapper">
-        <div class="msg-status">
-          <div class="thinking-dot"></div>
+        <div class="msg-status hidden">
+          <div class="thinking-dots"><span></span></div>
           <span class="status-label">Thinking...</span>
         </div>
-        <div class="msg-text content-body">
-          <!-- Streamed text goes here -->
-        </div>
-        <div class="msg-tools-container">
-          <!-- Tool call accordions go here -->
+        <div class="content-body">
+          <div class="msg-text"></div>
         </div>
         <div class="msg-actions">
-          <button class="icon-btn msg-action-btn copy-btn" title="Copy">
-            <svg width="14" height="14"><use href="#icon-copy"/></svg>
+          <button class="msg-action-btn copy-btn" title="Copy response">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+          <button class="msg-action-btn export-btn" title="More options">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </button>
+          <button class="msg-action-btn regen-btn" title="Regenerate">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+          <button class="msg-action-btn delete-btn" title="Delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
       </div>
     </div>
   </template>
 
-  <!-- Tool Call UI Template -->
-  <template id="tmplToolCall">
-    <div class="tool-call-ui">
-      <button class="tool-call-header">
-        <svg width="14" height="14"><use href="#icon-wrench"/></svg>
-        <span class="tool-name">tool_name</span>
-        <span class="tool-status">Running...</span>
-        <svg width="14" height="14" class="chevron"><use href="#icon-menu"/></svg>
-      </button>
-      <div class="tool-call-body" style="display: none;">
-        <div class="tool-args">
-          <strong>Args:</strong> <code></code>
-        </div>
-        <div class="tool-result-box">
-          <strong>Result:</strong>
-          <div class="tool-result-text"></div>
-          <img class="tool-result-img" src="" alt="" style="display: none;">
-        </div>
-      </div>
-    </div>
-  </template>
-
-  <!-- Code Block Template -->
-  <template id="tmplCodeBlock">
-    <div class="code-block-component">
-      <div class="code-header">
-        <span class="code-lang">code</span>
-        <button class="copy-code-btn">
-          <svg width="14" height="14"><use href="#icon-copy"/></svg> Copy
-        </button>
-      </div>
-      <pre class="code-body"><code></code></pre>
-    </div>
-  </template>
-
-  <!-- Toast Notification Template -->
+  <!-- Toast Template -->
   <template id="tmplToast">
     <div class="toast-notification">
+      <span class="toast-icon">✦</span>
       <span class="toast-message"></span>
     </div>
   </template>
 
-  <!-- Toast Container -->
-  <div id="toastContainer" class="toast-container"></div>
-
-  <!-- Main Script -->
-  <script type="module" src="script.js"></script>
+  <script src="script.js"></script>
 </body>
-</html>
+      </html>
