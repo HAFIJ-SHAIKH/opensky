@@ -44,7 +44,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Background canvas */
 #bgCanvas {
   position: fixed;
   inset: 0;
@@ -142,15 +141,15 @@ body {
 .mode-btn.active {
   background: var(--b4);
   color: var(--w);
-  box-shadow: 0 1px 8px rgba(0, 0, 0, .5);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .4), inset 0 0.5px 0 rgba(255, 255, 255, .04);
 }
 
-/* New Chat Button */
+/* New Chat Button — refined */
 .new-btn {
   margin: 4px 12px 4px;
   padding: 8px 11px;
   background: transparent;
-  border: 1px dashed var(--bd2);
+  border: 1px solid var(--bd);
   border-radius: var(--rx);
   color: var(--g3);
   font-family: var(--f);
@@ -225,8 +224,9 @@ body {
   color: var(--g1);
 }
 
+/* Delete button — always faintly visible */
 .chat-item-del {
-  opacity: 0;
+  opacity: .2;
   background: none;
   border: none;
   color: var(--g3);
@@ -234,18 +234,20 @@ body {
   padding: 2px;
   border-radius: 4px;
   font-size: 9px;
-  transition: all .15s;
+  transition: all .2s var(--e);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .chat-item:hover .chat-item-del {
-  opacity: 1;
+  opacity: .8;
 }
 
 .chat-item-del:hover {
   color: #ff4444;
   background: rgba(255, 68, 68, .08);
+  opacity: 1 !important;
 }
 
 /* Sidebar Footer */
@@ -293,13 +295,13 @@ body {
   min-width: 0;
 }
 
-/* Topbar */
+/* Topbar — tighter alignment */
 .topbar {
-  padding: 10px 14px;
+  padding: 11px 16px;
   border-bottom: 1px solid var(--bd);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   background: rgba(0, 0, 0, .35);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -328,10 +330,10 @@ body {
   flex: 1;
 }
 
-/* Icon Buttons */
+/* Icon Buttons — slightly larger hit target */
 .icon-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--rx);
   border: 1px solid var(--bd);
   background: transparent;
@@ -638,7 +640,6 @@ body {
   white-space: nowrap;
 }
 
-/* AI Message */
 .msg-ai-header {
   display: flex;
   align-items: center;
@@ -807,11 +808,11 @@ body {
   background: var(--b3);
 }
 
-/* ═══ TOOL STATUS ═══ */
+/* ═══ TOOL STATUS — tighter pills ═══ */
 .tool-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
   padding-left: 23px;
   margin-bottom: 6px;
 }
@@ -820,12 +821,13 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 8px;
+  padding: 2px 7px;
   background: var(--b2);
   border: 1px solid var(--bd);
-  border-radius: 12px;
-  font-size: 9.5px;
+  border-radius: 10px;
+  font-size: 9px;
   color: var(--g2);
+  letter-spacing: .15px;
   animation: toolIn .3s var(--o) both;
 }
 
@@ -839,73 +841,138 @@ body {
   color: #ff4444;
 }
 
-/* ═══ PLAN CARD ═══ */
+/* ═══ PLAN CARD — redesigned with dots + connector + progress bar ═══ */
 .plan-card {
   padding-left: 23px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   animation: planIn .3s var(--o) both;
+}
+
+.plan-progress {
+  height: 1.5px;
+  background: var(--bd);
+  border-radius: 1px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.plan-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--g2);
+  border-radius: 1px;
+  transition: width .4s var(--e);
 }
 
 .plan-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
-  font-size: 10px;
+  margin-bottom: 8px;
+  font-size: 9px;
   font-weight: 600;
-  color: var(--g2);
+  color: var(--g3);
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .8px;
 }
 
 .plan-head svg {
-  opacity: .5;
+  opacity: .4;
 }
 
 .plan-steps {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  position: relative;
+}
+
+/* Vertical connector line between dots */
+.plan-steps::before {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: var(--bd);
 }
 
 .plan-step {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
-  color: var(--g3);
-  padding: 2px 0;
-  transition: color .25s var(--e);
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+  position: relative;
 }
 
-.plan-step.active {
-  color: var(--g1);
-}
-
-.plan-step.done {
-  color: var(--g2);
-}
-
-.plan-step-icon {
-  width: 14px;
-  height: 14px;
+.plan-step-indicator {
+  width: 11px;
+  height: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
-.plan-step.done .plan-step-icon svg {
-  opacity: 1;
+.plan-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1.5px solid var(--g3);
+  transition: all .3s var(--e);
 }
 
-.plan-step.active .plan-step-icon svg {
-  opacity: 1;
-  animation: spin 1s linear infinite;
+.plan-step.done .plan-dot {
+  background: var(--g2);
+  border-color: var(--g2);
 }
 
-.plan-step .plan-step-icon svg {
-  opacity: .25;
+.plan-step.active .plan-dot {
+  background: var(--w);
+  border-color: var(--w);
+  box-shadow: 0 0 8px rgba(255, 255, 255, .12);
+  animation: thinkPulse 1.5s ease-in-out infinite;
+}
+
+.plan-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.plan-step-label {
+  font-size: 11px;
+  color: var(--g3);
+  line-height: 1.35;
+  transition: color .3s var(--e);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-step.done .plan-step-label {
+  color: var(--g2);
+}
+
+.plan-step.active .plan-step-label {
+  color: var(--g1);
+}
+
+.plan-step-sub {
+  font-size: 9px;
+  color: var(--g4);
+  transition: color .3s var(--e);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-step.active .plan-step-sub {
+  color: var(--g3);
 }
 
 /* ═══ STREAM WAVE ═══ */
@@ -958,7 +1025,7 @@ body {
   transform: scale(.95);
 }
 
-/* ═══ ATTACH MENU ═══ */
+/* ═══ ATTACH MENU — wider, deeper shadow, accent on hover ═══ */
 .attach-wrap {
   position: relative;
 }
@@ -972,8 +1039,8 @@ body {
   border: 1px solid var(--bd2);
   border-radius: var(--rs);
   padding: 4px;
-  min-width: 130px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .6);
+  min-width: 150px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, .65);
   z-index: 30;
   animation: fadeScale .2s var(--sp);
 }
@@ -984,22 +1051,24 @@ body {
 
 .attach-opt {
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 12px;
   background: none;
   border: none;
+  border-left: 2px solid transparent;
   color: var(--g1);
   font-family: var(--f);
   font-size: 11px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 7px;
-  border-radius: var(--rx);
-  transition: background .12s var(--e);
+  gap: 8px;
+  border-radius: 4px;
+  transition: all .15s var(--e);
 }
 
 .attach-opt:hover {
   background: var(--b4);
+  border-left-color: var(--g2);
 }
 
 /* ═══ INPUT AREA ═══ */
@@ -1384,27 +1453,32 @@ body {
   opacity: .5;
 }
 
-/* ═══ THINKING TEXT ═══ */
+/* ═══ THINKING TEXT — non-active steps heavily faded ═══ */
 .thinking-text {
   padding-left: 23px;
   font-size: 10.5px;
   color: var(--g3);
   animation: fadeUp .3s ease both;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
 }
 
 .thinking-text span {
-  display: inline-block;
-  transition: color .3s;
+  display: inline;
+  transition: color .3s, opacity .3s;
+  opacity: .3;
+}
+
+.thinking-text span.active {
+  color: var(--g1);
+  opacity: 1;
 }
 
 @keyframes thinkPulse {
   0%, 100% { opacity: .4; }
   50% { opacity: 1; }
-}
-
-.thinking-text span.active {
-  color: var(--g1);
-  animation: thinkPulse 1.2s ease-in-out infinite;
 }
 
 /* ═══ RESPONSIVE ═══ */
