@@ -1,81 +1,107 @@
+/* ═══════════════════════════════════════════════════════
+ * Planner — Decomposes tasks, renders plan, tracks execution
+ * ═══════════════════════════════════════════════════════ */
 var Planner = (function() {
 
-  function shouldPlan(text) {
-    if (text.length < 50) return false;
-    var indicators = [
-      'step by step', 'build a', 'create a', 'implement', 'develop a',
-      'research and', 'compare and', 'analyze the', 'design a',
-      'full', 'complete', 'comprehensive', 'detailed guide',
-      'multiple', 'several', 'both', 'including the following',
-      'with these features', 'requirements:', 'specification',
-      'from scratch', 'end to end', 'e2e', 'full stack'
-    ];
-    var lower = text.toLowerCase();
-    var hits = 0;
-    for (var i = 0; i < indicators.length; i++) {
-      if (lower.indexOf(indicators[i]) !== -1) hits++;
+  /* Sub-agent definitions */
+  var AGENTS = {
+    researcher: { label: 'Researcher', tools: ['wiki', 'country', 'weather', 'uni'] },
+    coder:     { label: 'Coder',      tools: [] },
+    data:      { label: 'Data Analyst', tools: ['math', 'num', 'exchange', 'crypto', 'ip'] },
+    fun:       { label: 'Fun Agent',   tools: ['joke', 'chuck', 'trivia', 'quote', 'cat', 'dog', 'pokemon', 'advice', 'bored'] },
+    utility:   { label: 'Utility',    tools: ['password', 'date', 'lorem', 'uuid', 'dict'] },
+    social:    { label: 'Social',      tools: ['github', 'meal'] }
+  };
+
+  function identifyAgents(toolMatches) {
+    var active = {};
+    toolMatches.forEach(function(m) {
+      Object.keys(AGENTS).forEach(function(a) {
+        if (AGENTS[a].tools.indexOf(m.tool.id) !== -1) active[a] = true;
+      });
+    });
+    // Always include coder if in coding mode
+    if (Agent.getMode() === 'coding') active.coder = true;
+    return Object.keys(active);
+  });
+
+  function createPlan(text, toolMatches, routeResult) {
+    var steps = [];
+    var agents = identifyAgents(toolMatches);
+    var agentLabels = agents.map(function(a) { return AGENTS[a] ? AGENTS[a].label : a; });
+
+    // Step 1: Always analyze
+    steps.push({ label: 'Analyzing request', sub: agents.length ? 'Routing to ' + agentLabels.join(', ') : 'Direct response', icon: 'analyze' });
+
+    // Step 2: Memory if needed
+    if (routeResult.memRecall) {
+      steps.push({ label: 'Recalling memory', sub: 'Searching stored facts', icon: 'memory' });
     }
-    return hits >= 1 && (text.length > 80 || hits >= 2);
+
+    // Step 3: Tools
+    if (toolMatches.length) {
+      steps.push({ label: 'Dispatching to ' + toolMatches.length + ' tool(s)', sub: agentLabels.join(' + '), icon: 'route' });
+      toolMatches.forEach(function(m) {
+        steps.push({ label: m.tool.icon + ' ' + m.tool.name, sub: m.query.length > 40 ? m.query.slice(0, 40) + '...' : m.query, icon: 'tool' });
+      });
+    }
+
+    // Step 4: Memory store
+    if (routeResult.memStore) {
+      steps.push({ label: 'Storing to memory', sub: routeResult.memStore.slice(0, 50) + '...', icon: 'memory' });
+    }
+
+    // Step 5: Generate
+    steps.push({ label: 'Generating response', sub: Agent.getMode() === 'research' ? 'Structured analysis' : Agent.getMode() === 'coding' ? 'With code' : 'Natural language', icon: 'generate' });
+
+    // Step 6: Review
+    steps.push({ label: 'Reviewing and refining', sub: 'Self-check for accuracy', icon: 'review' });
+
+    return steps;
   }
 
-  function generatePlan(text, apiKey) {
-    var prompt = 'Break this request into clear actionable steps for an AI assistant to follow. ' +
-      'Return ONLY a JSON array of strings, each being one step (under 15 words). ' +
-      'Mark each step with a role like [Researcher], [Coder], [Analyst], [Writer], [Reviewer]. ' +
-      '2-5 steps. Be specific.\n\nRequest: ' + text;
+  var CHECK = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-6" stroke="#555" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var SPIN = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2a4 4 0 014 4 4 4 0 01-4-4" stroke="#999" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="16 6"/></svg>';
+  var CIRCLE = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="3" stroke="#2a2a2a" stroke-width="1"/></svg>';
 
-    return fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': location.href,
-        'X-Title': 'opensky-planner'
-      },
-      body: JSON.stringify({
-        model: 'openrouter/free',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 200,
-        temperature: 0.3
-      })
-    })
-    .then(function(r) {
-      if (!r.ok) throw new Error('Plan API error');
-      return r.json();
-    })
-    .then(function(d) {
-      var txt = d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content || '';
-      txt = txt.replace(/```json?/g, '').replace(/```/g, '').trim();
-      var arr = JSON.parse(txt);
-      if (!Array.isArray(arr) || !arr.length) throw new Error('Invalid plan format');
-      return arr.filter(function(s) { return s.length > 2 && s.length < 80; }).slice(0, 5);
-    });
+  function renderPlan(container, steps) {
+    container.innerHTML = '<div class="plan-card" id="planCard">' +
+      '<div class="plan-head"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l5 5-5 5H1V6h5L6 1z" stroke="#555" stroke-width="1" stroke-linejoin="round"/></svg> Execution Plan</div>' +
+      '<div class="plan-steps" id="planSteps">' +
+      steps.map(function(s, i) {
+        return '<div class="plan-step" id="ps' + i + '">' +
+          '<div class="plan-step-icon">' + CIRCLE + '</div>' +
+          '<span>' + esc(s.label) + '</span>' +
+          (s.sub ? '<span style="color:var(--g3);font-size:9.5px;margin-left:4px">' + esc(s.sub) + '</span>' : '') +
+          '</div>';
+      }).join('') +
+      '</div></div>';
   }
 
-  function formatHTML(steps) {
-    var html = '<div class="plan-box" id="planBox">';
-    html += '<div class="plan-head">\u{1F4CB} Plan <span class="plan-count">' + steps.length + ' steps</span></div>';
-    html += '<div class="plan-steps">';
-    steps.forEach(function(s, i) {
-      html += '<div class="plan-step" style="animation-delay:' + (i * 0.06) + 's"><span class="plan-num">' + (i + 1) + '</span>' + esc(s) + '</div>';
-    });
-    html += '</div></div>';
-    return html;
+  function markStep(index, status) {
+    var el = document.getElementById('ps' + index);
+    if (!el) return;
+    el.className = 'plan-step ' + status;
+    var icon = el.querySelector('.plan-step-icon');
+    if (!icon) return;
+    if (status === 'done') icon.innerHTML = CHECK;
+    else if (status === 'active') icon.innerHTML = SPIN;
+    else icon.innerHTML = CIRCLE;
   }
 
-  function formatCtx(steps) {
-    var c = '\n[EXECUTION PLAN — you MUST follow these steps in order, marking each complete with \u2713 as you finish it]:\n';
-    steps.forEach(function(s, i) { c += 'Step ' + (i + 1) + ': ' + s + '\n'; });
-    c += '[END PLAN]\n';
-    return c;
+  function removePlan() {
+    var el = document.getElementById('planCard');
+    if (el) { el.style.opacity = '0'; el.style.transform = 'translateY(-4px)'; setTimeout(function() { if (el.parentNode) el.remove(); }, 200); }
   }
 
-  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function esc(s) { var d = document.createElement('span'); d.textContent = s; return d.innerHTML; }
 
   return {
-    shouldPlan: shouldPlan,
-    generatePlan: generatePlan,
-    formatHTML: formatHTML,
-    formatCtx: formatCtx
+    AGENTS: AGENTS,
+    identifyAgents: identifyAgents,
+    createPlan: createPlan,
+    renderPlan: renderPlan,
+    markStep: markStep,
+    removePlan: removePlan
   };
 })();
