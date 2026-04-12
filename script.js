@@ -13,5 +13,5 @@ let app = fs.readFileSync(appPath, 'utf8');
 
 app = app.replace('__OPENKEY__', apiKey);
 
-fs.writeFileSync(appPath, '/* opensky — built with injected key */\n' + app);
+fs.writeFileSync(appPath, '/* opensky — built */\n' + app);
 console.log('API key injected into app.js');
