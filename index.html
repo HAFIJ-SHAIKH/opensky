@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>opensky</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +13,6 @@
 
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-  <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <div class="logo">
@@ -24,20 +22,23 @@
         </svg>
         <span class="logo-word">opensky</span>
       </div>
+      <div class="logo-sub">by Hafij Shaikh</div>
+    </div>
+
+    <div class="mode-selector" id="modeSelector">
+      <button class="mode-btn active" data-mode="general">Chat</button>
+      <button class="mode-btn" data-mode="research">Research</button>
+      <button class="mode-btn" data-mode="coding">Code</button>
     </div>
 
     <button class="new-btn" id="newChatBtn">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       New chat
     </button>
 
     <div class="chat-list" id="chatList"></div>
 
     <div class="sidebar-foot">
-      <button class="key-btn" id="keyBtn">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5a3.5 3.5 0 00-3 5.2L3 12.2V15h2.8l5.5-5.5A3.5 3.5 0 0011.5 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span id="keyStatus">Key not set</span>
-      </button>
       <div class="model-info">
         <span class="status-dot" id="statusDot"></span>
         <span id="modelLabel">openrouter/free</span>
@@ -45,16 +46,19 @@
     </div>
   </aside>
 
-  <!-- Main -->
-  <main class="main" id="mainArea">
+  <main class="main">
     <header class="topbar">
       <button class="icon-btn mobile-only" id="menuToggle" aria-label="Menu">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       </button>
       <span class="topbar-title" id="topbarTitle">opensky</span>
+      <span class="topbar-mode" id="topbarMode">Chat</span>
       <div class="topbar-spacer"></div>
-      <button class="icon-btn" id="clearChatBtn" aria-label="Clear" title="Clear chat">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.3 4V2.7a.7.7 0 01.7-.7h4a.7.7 0 01.7.7V4M6.3 7v4.5M9.7 7v4.5M3 4l.7 9a1 1 0 001 1h6.6a1 1 0 001-1L13 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <button class="icon-btn" id="downloadChatBtn" title="Download chat">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2v8m0 0l-3-3m3 3l3-3M2 12v2h12v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="icon-btn" id="clearChatBtn" title="Clear chat">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.3 4V2.7a.7.7 0 01.7-.7h4a.7.7 0 01.7.7V4M6.3 7v4.5M9.7 7v4.5M3 4l.7 9a1 1 0 001 1h6.6a1 1 0 001-1L13 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </header>
 
@@ -63,32 +67,28 @@
     </div>
 
     <div class="input-area">
+      <div class="file-preview" id="filePreview"></div>
       <div class="input-wrap">
-        <div class="input-box" id="inputBox">
+        <div class="input-box">
+          <button class="input-icon-btn" id="uploadBtn" title="Upload file">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 1.5v10m0 0L6 8.5m3 3l3-3M3 12v2.5a1 1 0 001 1h10a1 1 0 001-1V12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="input-icon-btn" id="micBtn" title="Voice input">
+            <svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M9 1a3 3 0 00-3 3v4a3 3 0 006 0V4a3 3 0 00-3-3z" stroke="currentColor" stroke-width="1.3"/><path d="M14 7v1a5 5 0 01-10 0V7M9 13v4M6 17h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <input type="file" id="fileInput" multiple accept="image/*,video/*,.txt,.md,.json,.csv,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.sh,.c,.cpp,.h,.java,.rb,.go,.rs,.php,.sql,.r,.swift,.kt,.log,.ini,.cfg,.env,.gitignore,.dockerfile" hidden>
           <textarea id="messageInput" rows="1" placeholder="Ask anything..."></textarea>
           <button class="send-btn" id="sendBtn" aria-label="Send">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9h12M10 4l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M3 9h12M10 4l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
       </div>
     </div>
   </main>
 
-  <!-- Key modal -->
-  <div class="modal-backdrop" id="keyModal">
-    <div class="modal-card">
-      <h3>Set API Key</h3>
-      <p>Paste your OpenRouter API key to use opensky locally. On GitHub Pages, it's injected automatically from the <code>OPENKEY</code> secret.</p>
-      <input type="password" id="keyInput" placeholder="sk-or-..." autocomplete="off">
-      <div class="modal-actions">
-        <button class="modal-btn secondary" id="keyCancel">Cancel</button>
-        <button class="modal-btn primary" id="keySave">Save</button>
-      </div>
-    </div>
-  </div>
-
   <div class="toast-container" id="toastContainer"></div>
 
+  <script src="agent.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
