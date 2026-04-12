@@ -1,19 +1,15 @@
 name: Deploy opensky
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: false
-
 jobs:
   build-deploy:
     environment:
@@ -22,17 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Run Script
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: node script.js
-
       - uses: actions/configure-pages@v5
-
       - uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
-
       - id: deployment
         uses: actions/deploy-pages@v4
