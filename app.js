@@ -50,7 +50,7 @@
 
   /* ── Key (injected by script.js from GitHub secret) ─ */
   function getKey() { return KEY_PH; }
-  function hasKey() { return KEY_PH.indexOf('__') === -1; }
+  function hasKey() { return KEY_PH && KEY_PH.length > 10; }
 
   /* ══════════════════════════════════════════════════════
    *  BACKGROUND PARTICLES
