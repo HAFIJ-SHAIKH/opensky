@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
@@ -21,28 +21,18 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Inject API key into JS
-        run: |
-          sed -i "s|__OPENKEY_PLACEHOLDER__|${{ secrets.OPENKEY }}|g" script.js
+      - name: Run Script
+        env:
+          OPENKEY: ${{ secrets.OPENKEY }}
+        run: node script.js
 
-      - name: Verify key injection
-        run: |
-          if grep -q "__OPENKEY_PLACEHOLDER__" script.js; then
-            echo "ERROR: OPENKEY secret is not set!"
-            exit 1
-          fi
+      - uses: actions/configure-pages@v5
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
 
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
