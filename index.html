@@ -4,67 +4,91 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>opensky</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <canvas id="starfield"></canvas>
-  <div class="ambient-blob one"></div>
-  <div class="ambient-blob two"></div>
-  <div class="ambient-blob three"></div>
+  <canvas id="bgCanvas"></canvas>
 
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
+    <div class="sidebar-head">
       <div class="logo">
-        <div class="logo-icon"><i class="fas fa-paper-plane"></i></div>
-        <span class="logo-text">opensky</span>
+        <svg class="logo-mark" viewBox="0 0 32 32" fill="none">
+          <path d="M16 2L28 14L16 26L4 14L16 2Z" stroke="white" stroke-width="2"/>
+          <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="white"/>
+        </svg>
+        <span class="logo-word">opensky</span>
       </div>
-      <div class="logo-sub">Free AI Chat</div>
     </div>
-    <button class="new-chat-btn" id="newChatBtn">
-      <i class="fas fa-plus"></i> New Conversation
+
+    <button class="new-btn" id="newChatBtn">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      New chat
     </button>
+
     <div class="chat-list" id="chatList"></div>
-    <div class="sidebar-footer">
-      <div class="model-badge">
-        <span class="dot"></span>
-        <span id="modelLabel">openrouter/free &mdash; auto</span>
+
+    <div class="sidebar-foot">
+      <button class="key-btn" id="keyBtn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5a3.5 3.5 0 00-3 5.2L3 12.2V15h2.8l5.5-5.5A3.5 3.5 0 0011.5 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="keyStatus">Key not set</span>
+      </button>
+      <div class="model-info">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="modelLabel">openrouter/free</span>
       </div>
     </div>
   </aside>
 
   <!-- Main -->
-  <main class="main">
-    <div class="topbar">
-      <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
-      <span class="topbar-title" id="topbarTitle">New Conversation</span>
-      <span class="topbar-model">Free Tier</span>
+  <main class="main" id="mainArea">
+    <header class="topbar">
+      <button class="icon-btn mobile-only" id="menuToggle" aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <span class="topbar-title" id="topbarTitle">opensky</span>
       <div class="topbar-spacer"></div>
-      <button class="topbar-action" id="clearChatBtn" title="Clear chat"><i class="fas fa-eraser"></i></button>
-    </div>
+      <button class="icon-btn" id="clearChatBtn" aria-label="Clear" title="Clear chat">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.3 4V2.7a.7.7 0 01.7-.7h4a.7.7 0 01.7.7V4M6.3 7v4.5M9.7 7v4.5M3 4l.7 9a1 1 0 001 1h6.6a1 1 0 001-1L13 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </header>
 
     <div class="chat-area" id="chatArea">
       <div class="chat-messages" id="chatMessages"></div>
     </div>
 
     <div class="input-area">
-      <div class="input-wrapper">
-        <div class="input-box">
-          <textarea id="messageInput" rows="1" placeholder="Message opensky..."></textarea>
-          <button class="send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
+      <div class="input-wrap">
+        <div class="input-box" id="inputBox">
+          <textarea id="messageInput" rows="1" placeholder="Ask anything..."></textarea>
+          <button class="send-btn" id="sendBtn" aria-label="Send">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9h12M10 4l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
-        <div class="input-hint">Powered by OpenRouter &middot; Free models auto-selected &middot; Press Enter to send, Shift+Enter for new line</div>
       </div>
     </div>
   </main>
 
+  <!-- Key modal -->
+  <div class="modal-backdrop" id="keyModal">
+    <div class="modal-card">
+      <h3>Set API Key</h3>
+      <p>Paste your OpenRouter API key to use opensky locally. On GitHub Pages, it's injected automatically from the <code>OPENKEY</code> secret.</p>
+      <input type="password" id="keyInput" placeholder="sk-or-..." autocomplete="off">
+      <div class="modal-actions">
+        <button class="modal-btn secondary" id="keyCancel">Cancel</button>
+        <button class="modal-btn primary" id="keySave">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="script.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
