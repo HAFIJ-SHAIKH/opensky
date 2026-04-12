@@ -30,51 +30,42 @@ var Planner = (function () {
 
     steps.push({
       label: 'Analyzing request',
-      sub: agents.length ? 'Routing to ' + agentLabels.join(', ') : 'Direct response',
-      icon: 'analyze'
+      sub: agents.length ? 'Routing to ' + agentLabels.join(', ') : 'Direct response'
     });
 
     if (routeResult.memRecall) {
-      steps.push({ label: 'Recalling memory', sub: 'Searching stored facts', icon: 'memory' });
+      steps.push({ label: 'Recalling memory', sub: 'Searching stored facts' });
     }
 
     if (toolMatches.length) {
       steps.push({
         label: 'Dispatching to ' + toolMatches.length + ' tool(s)',
-        sub: agentLabels.join(' + '),
-        icon: 'route'
+        sub: agentLabels.join(' + ')
       });
       toolMatches.forEach(function (m) {
+        var qStr = typeof m.query === 'string' ? m.query : String(m.query);
         steps.push({
           label: m.tool.icon + ' ' + m.tool.name,
-          sub: (typeof m.query === 'string' ? m.query : String(m.query)).length > 40
-            ? (typeof m.query === 'string' ? m.query : String(m.query)).slice(0, 40) + '...'
-            : (typeof m.query === 'string' ? m.query : String(m.query)),
-          icon: 'tool'
+          sub: qStr.length > 40 ? qStr.slice(0, 40) + '...' : qStr
         });
       });
     }
 
     if (routeResult.memStore) {
-      steps.push({ label: 'Storing to memory', sub: routeResult.memStore.slice(0, 50) + '...', icon: 'memory' });
+      steps.push({ label: 'Storing to memory', sub: routeResult.memStore.slice(0, 50) + '...' });
     }
 
     steps.push({
       label: 'Generating response',
       sub: Agent.getMode() === 'research' ? 'Structured analysis'
         : Agent.getMode() === 'coding' ? 'With code'
-        : 'Natural language',
-      icon: 'generate'
+        : 'Natural language'
     });
 
-    steps.push({ label: 'Reviewing and refining', sub: 'Self-check for accuracy', icon: 'review' });
+    steps.push({ label: 'Reviewing and refining', sub: 'Self-check for accuracy' });
 
     return steps;
   }
-
-  var CHECK = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-6" stroke="#555" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var SPIN = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2a4 4 0 014 4 4 4 0 01-4-4" stroke="#999" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="16 6"/></svg>';
-  var CIRCLE = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="3" stroke="#2a2a2a" stroke-width="1"/></svg>';
 
   function esc(s) {
     var d = document.createElement('span');
@@ -83,28 +74,34 @@ var Planner = (function () {
   }
 
   function renderPlan(container, steps) {
-    container.innerHTML = '<div class="plan-card" id="planCard">' +
-      '<div class="plan-head"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l5 5-5 5H1V6h5L6 1z" stroke="#555" stroke-width="1" stroke-linejoin="round"/></svg> Execution Plan</div>' +
-      '<div class="plan-steps" id="planSteps">' +
-      steps.map(function (s, i) {
-        return '<div class="plan-step" id="ps' + i + '">' +
-          '<div class="plan-step-icon">' + CIRCLE + '</div>' +
-          '<span>' + esc(s.label) + '</span>' +
-          (s.sub ? '<span style="color:var(--g3);font-size:9.5px;margin-left:4px">' + esc(s.sub) + '</span>' : '') +
-          '</div>';
-      }).join('') +
-      '</div></div>';
+    container.innerHTML =
+      '<div class="plan-card" id="planCard">' +
+        '<div class="plan-progress"><div class="plan-progress-bar" id="planProgressBar"></div></div>' +
+        '<div class="plan-head"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l5 5-5 5H1V6h5L6 1z" stroke="#555" stroke-width="1" stroke-linejoin="round"/></svg> Plan</div>' +
+        '<div class="plan-steps" id="planSteps">' +
+          steps.map(function (s, i) {
+            return '<div class="plan-step" id="ps' + i + '">' +
+              '<div class="plan-step-indicator"><span class="plan-dot"></span></div>' +
+              '<div class="plan-step-content">' +
+                '<span class="plan-step-label">' + esc(s.label) + '</span>' +
+                (s.sub ? '<span class="plan-step-sub">' + esc(s.sub) + '</span>' : '') +
+              '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</div>';
   }
 
   function markStep(index, status) {
     var el = document.getElementById('ps' + index);
     if (!el) return;
     el.className = 'plan-step ' + status;
-    var icon = el.querySelector('.plan-step-icon');
-    if (!icon) return;
-    if (status === 'done') icon.innerHTML = CHECK;
-    else if (status === 'active') icon.innerHTML = SPIN;
-    else icon.innerHTML = CIRCLE;
+    var bar = document.getElementById('planProgressBar');
+    var total = document.querySelectorAll('.plan-step').length;
+    if (bar && total) {
+      var done = document.querySelectorAll('.plan-step.done').length;
+      bar.style.width = Math.round(done / total * 100) + '%';
+    }
   }
 
   function removePlan() {
