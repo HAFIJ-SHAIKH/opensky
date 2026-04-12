@@ -7,7 +7,7 @@
   /* ── Config ───────────────────────────────────────── */
   var API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   var API_MODEL = 'openrouter/free';
-  var KEY_PH = '';
+  var KEY_PH = 'NONE';
 
   /* ── SVG Icons ────────────────────────────────────── */
   var ICON_SEND = '<svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M3 9h12M10 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -48,9 +48,12 @@
 
   if (!$msgs || !$inp || !$btn) { console.error('opensky: missing DOM'); return; }
 
-  /* ── Key (injected by script.js from GitHub secret) ─ */
-  function getKey() { return KEY_PH; }
-  function hasKey() { return KEY_PH && KEY_PH.length > 10; }
+  /* ── Key (decoded from base64, injected by script.js) ─ */
+  function getKey() { return KEY_PH === 'NONE' ? '' : (typeof atob === 'function' ? atob(KEY_PH) : KEY_PH); }
+  function hasKey() { return KEY_PH !== 'NONE' && KEY_PH.length > 10; }
+
+  /* ── HTML escape — also defined locally in planner.txt (intentional, separate IIFE scope) ── */
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   /* ══════════════════════════════════════════════════════
    *  BACKGROUND PARTICLES
@@ -58,13 +61,33 @@
   (function () {
     var c = document.getElementById('bgCanvas');
     if (!c) return;
+
+    /* Respect prefers-reduced-motion — skip animation entirely */
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      /* Draw static dots once, no animation loop */
+      var sx = c.getContext('2d');
+      function rzStatic() { c.width = innerWidth; c.height = innerHeight; }
+      rzStatic();
+      sx.fillStyle = 'rgba(255,255,255,0.03)';
+      for (var i = 0; i < 20; i++) {
+        sx.beginPath();
+        sx.arc(Math.random() * c.width, Math.random() * c.height, Math.max(0.1, Math.random() * 0.5 + 0.08), 0, 6.28);
+        sx.fill();
+      }
+      addEventListener('resize', rzStatic);
+      return;
+    }
+
     var x = c.getContext('2d'), ps = [], N = 28;
+    var hidden = false;
     function rz() { c.width = innerWidth; c.height = innerHeight; }
     function sd() {
       ps = [];
       for (var i = 0; i < N; i++) ps.push({ x: Math.random() * c.width, y: Math.random() * c.height, r: Math.random() * 0.5 + 0.08, a: Math.random() * 0.05 + 0.008, vx: (Math.random() - 0.5) * 0.035, vy: (Math.random() - 0.5) * 0.02, ph: Math.random() * 6.28 });
     }
     function dr(t) {
+      if (hidden) { requestAnimationFrame(dr); return; }
       x.clearRect(0, 0, c.width, c.height);
       for (var i = 0; i < ps.length; i++) {
         var p = ps[i]; p.x += p.vx; p.y += p.vy;
@@ -77,6 +100,7 @@
       requestAnimationFrame(dr);
     }
     addEventListener('resize', function () { rz(); sd(); });
+    document.addEventListener('visibilitychange', function () { hidden = document.hidden; });
     rz(); sd(); requestAnimationFrame(dr);
   })();
 
@@ -92,6 +116,8 @@
    * ══════════════════════════════════════════════════════ */
   function md(raw) {
     var h = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    /* Fenced code blocks — html blocks get a Run button */
     h = h.replace(/```(html)\n?([\s\S]*?)```/g, function (_, l, c) {
       var id = 'c' + Math.random().toString(36).slice(2, 8);
       return '<pre><code id="' + id + '">' + c.trim() + '</code><button class="copy-code-btn run-btn" data-run="' + id + '">Run</button><button class="copy-code-btn" data-cid="' + id + '">Copy</button></pre>';
@@ -100,17 +126,37 @@
       var id = 'c' + Math.random().toString(36).slice(2, 8);
       return '<pre><code id="' + id + '">' + c.trim() + '</code><button class="copy-code-btn" data-cid="' + id + '">Copy</button><button class="copy-code-btn" data-cid-dl="' + id + '" data-ext="' + (l || 'txt') + '">Save</button></pre>';
     });
+
+    /* Inline code */
     h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    /* Bold */
     h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    h = h.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+
+    /* Italic — no lookbehind (Safari < 16.4 compatible). Safe because bold (**)
+       is already processed above, so remaining single * are genuine italic markers */
+    h = h.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    /* Headings */
     h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
     h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    /* Blockquotes */
     h = h.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-    h = h.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-    h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-    h = h.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-    h = h.split(/\n\n+/).map(function (b) { b = b.trim(); if (!b) return ''; return b.charAt(0) === '<' ? b : '<p>' + b.replace(/\n/g, '<br>') + '</p>'; }).join('\n');
+
+    /* Lists — use comment markers to distinguish ul vs ol before wrapping */
+    h = h.replace(/^[\-\*] (.+)$/gm, '<!--UL--><li>$1</li>');
+    h = h.replace(/^\d+\. (.+)$/gm, '<!--OL--><li>$1</li>');
+    h = h.replace(/((?:<!--UL--><li>.*<\/li>\n?)+)/g, function (m) { return '<ul>' + m.replace(/<!--UL-->/g, '') + '</ul>'; });
+    h = h.replace(/((?:<!--OL--><li>.*<\/li>\n?)+)/g, function (m) { return '<ol>' + m.replace(/<!--OL-->/g, '') + '</ol>'; });
+
+    /* Paragraphs */
+    h = h.split(/\n\n+/).map(function (b) {
+      b = b.trim(); if (!b) return '';
+      return b.charAt(0) === '<' ? b : '<p>' + b.replace(/\n/g, '<br>') + '</p>';
+    }).join('\n');
+
     return h;
   }
 
@@ -131,7 +177,6 @@
    * ══════════════════════════════════════════════════════ */
   function clip(t) { navigator.clipboard.writeText(t).then(function () { toast('Copied', 'ok'); }).catch(function () { toast('Copy failed', 'err'); }); }
   function dl(c, n, m) { var b = new Blob([c], { type: m || 'text/plain' }), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = n; a.click(); URL.revokeObjectURL(u); }
-  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   /* ══════════════════════════════════════════════════════
@@ -287,7 +332,29 @@
    *  CONVERSATIONS
    * ══════════════════════════════════════════════════════ */
   function loadC() { try { convos = JSON.parse(localStorage.getItem('os_c') || '[]'); } catch (e) { convos = []; } }
-  function saveC() { try { localStorage.setItem('os_c', JSON.stringify(convos)); } catch (e) {} }
+
+  /* Save with localStorage overflow detection — warns user and auto-trims if needed */
+  function saveC() {
+    try {
+      localStorage.setItem('os_c', JSON.stringify(convos));
+    } catch (e) {
+      var isQuota = (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
+      if (isQuota && convos.length > 3) {
+        toast('Storage full — trimming older chats', 'err');
+        try {
+          var trimmed = convos.slice(0, Math.max(3, convos.length - 5));
+          localStorage.setItem('os_c', JSON.stringify(trimmed));
+          convos = trimmed;
+          renList();
+        } catch (e2) {
+          toast('Storage full — cannot save. Clear chats to free space.', 'err');
+        }
+      } else if (isQuota) {
+        toast('Storage full — clear chats to free space', 'err');
+      }
+    }
+  }
+
   function getCon() { for (var i = 0; i < convos.length; i++) if (convos[i].id === activeId) return convos[i]; return null; }
   function newCon() {
     var c = { id: 'c' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title: 'New chat', msgs: [], mode: Agent.getMode(), ts: Date.now() };
@@ -354,7 +421,7 @@
   }
 
   function welHTML() {
-    return '<div class="welcome"><div class="welcome-logo"><svg style="width:40px;height:40px" viewBox="0 0 32 32" fill="none"><path d="M16 2L28 14L16 26L4 14L16 2Z" stroke="white" stroke-width="1.8"/><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="white"/></svg></div><h2>What can I help with?</h2><p>25 tools, persistent memory, file uploads, voice input, task planning, and live code preview.</p><div class="suggestions"><button class="sugg" data-s="Weather in Tokyo and info about Japan">Weather + Japan</button><button class="sugg" data-s="Build a to-do app with HTML CSS JS">Build a todo app</button><button class="sugg" data-s="Tell me a joke, a quote, and a cat fact">Joke + quote + cat</button><button class="sugg" data-s="Who created you?">Who are you?</button></div></div>';
+    return '<div class="welcome"><div class="welcome-logo"><svg style="width:40px;height:40px" viewBox="0 0 32 32" fill="none"><path d="M16 2L28 14L16 26L4 14L16 2Z" stroke="white" stroke-width="1.8"/><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="white"/></svg></div><h2>What can I help with?</h2><p>27 tools, persistent memory, file uploads, voice input, task planning, and live code preview.</p><div class="suggestions"><button class="sugg" data-s="Weather in Tokyo and info about Japan">Weather + Japan</button><button class="sugg" data-s="Build a to-do app with HTML CSS JS">Build a todo app</button><button class="sugg" data-s="Tell me a joke, a quote, and a cat fact">Joke + quote + cat</button><button class="sugg" data-s="Who created you?">Who are you?</button></div></div>';
   }
 
   /* ══════════════════════════════════════════════════════
@@ -510,12 +577,13 @@
       var taEl = document.getElementById('toolArea');
       var savedPills = taEl ? taEl.innerHTML : '';
 
-      /* Persist — NO follow-up API call */
+      /* Persist */
       con.msgs.push({ role: 'assistant', t: full, toolHtml: savedPills });
       saveC(); renderMsgs();
 
-      /* Auto-remember from response */
-      try { var mm = full.match(/(?:remember|note|save|store|keep in mind)\s*(?:that|this|the fact)\s*:?\s*(.+)/i); if (mm) Agent.memory.remember(mm[1].trim().slice(0, 200), 'fact'); } catch (e) {}
+      /* REMOVED: Auto-remember from AI response was storing garbage facts.
+         Memory is now only updated through explicit user commands ("remember that...")
+         handled by Agent.route() → Agent.handleMem() */
 
     } catch (err) {
       stopThinking();
