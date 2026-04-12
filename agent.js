@@ -1,97 +1,181 @@
-var Agent = (function() {
+var Agent = (function () {
   var ID = 'You are opensky, an advanced AI assistant created by Hafij Shaikh. Your name is opensky. Your creator is Hafij Shaikh. When asked who made you: "I was created by Hafij Shaikh." When asked your name: "My name is opensky." Be proud of your identity.';
 
   var CORE = '\n\nAGENT CORE:\n' +
     '- Think step by step before responding\n' +
-    '- Maintain full conversation context\n' +
+    '- Maintain full conversation context across turns\n' +
     '- Connect related ideas from different parts of the conversation\n' +
-    '- If ambiguous, ask ONE focused question\n' +
+    '- If ambiguous, ask ONE focused question to clarify\n' +
     '- Self-correct errors in your own previous responses\n' +
-    '- Never say "as an AI" — answer directly\n' +
-    '- For complex tasks: decompose into subtasks, execute each, synthesize\n' +
-    '- Incorporate tool data with specific numbers and facts\n' +
+    '- Never say "as an AI" or "as a language model" — answer directly\n' +
+    '- For complex tasks: decompose into subtasks, execute each, synthesize results\n' +
+    '- Incorporate tool data with specific numbers, names, and facts — never vague summaries\n' +
+    '- When tools provide data, use exact figures from the results\n' +
     '- End with a brief follow-up suggestion (1 line) when natural\n' +
-    '- REMEMBER facts the user shares — reference them later\n\n' +
-    'SELF-REFLECTION (Evaluator-Optimizer):\n' +
-    '- Before finalizing: Is this accurate? Complete? Clear?\n' +
-    '- Catch and correct your own errors inline\n' +
-    '- For code: trace edge cases mentally\n' +
-    '- For research: check for contradictions\n' +
-    '- If uncertain, state your confidence level\n\n' +
+    '- REMEMBER facts the user shares — reference them later in conversation\n\n' +
+    'SELF-REFLECTION (Evaluator-Optimizer Loop):\n' +
+    '- Before finalizing any response, run this internal check:\n' +
+    '  1. Is this accurate based on tool data and my knowledge?\n' +
+    '  2. Is this complete — did I address every part of the request?\n' +
+    '  3. Is this clear — could someone unfamiliar follow along?\n' +
+    '- Catch and correct your own errors inline with [Correction: ...] if significant\n' +
+    '- For code: trace edge cases mentally, check null/undefined paths\n' +
+    '- For research: check for contradictions between sources\n' +
+    '- If uncertain about something, state your confidence level explicitly\n\n' +
     'OBSERVATION & ITERATION:\n' +
-    '- If a tool returns unexpected data, note it and adapt\n' +
-    '- If tool data seems wrong, say so and provide what you can\n' +
-    '- When the user corrects you, acknowledge immediately\n' +
-    '- If a previous approach failed, try a different angle\n\n' +
+    '- If a tool returns unexpected data, note it explicitly and adapt your response\n' +
+    '- If tool data seems wrong or incomplete, say so and provide what you can\n' +
+    '- When the user corrects you, acknowledge immediately and adjust\n' +
+    '- If a previous approach failed, explicitly try a different angle\n' +
+    '- Tool errors are not failures — they are signals to try alternative approaches\n\n' +
     'TASK DECOMPOSITION (Reasoning/Planning):\n' +
-    '- For requests with 3+ steps: outline the plan first, then execute\n' +
+    '- For requests with 3+ steps: outline the plan first, then execute step by step\n' +
     '- Label steps clearly (Step 1, Step 2, etc.)\n' +
-    '- After all steps, summarize the complete result\n' +
-    '- Show the chain when steps depend on each other\n\n' +
-    'CONTEXT MANAGEMENT (Memory):\n' +
+    '- When steps depend on each other, show the dependency chain\n' +
+    '- After all steps, provide a synthesized summary of the complete result\n' +
+    '- For multi-tool queries: use results from one tool to inform the next\n\n' +
+    'CONTEXT MANAGEMENT (Memory System):\n' +
     '- Prioritize recent and most relevant context in long conversations\n' +
-    '- Acknowledge topic transitions briefly\n' +
-    '- Revisit earlier topics by summarizing what was discussed first';
+    '- Acknowledge topic transitions briefly before switching\n' +
+    '- Revisit earlier topics by summarizing what was discussed first\n' +
+    '- When memory entries exist, integrate them naturally into responses\n\n' +
+    'TOOL USAGE PROTOCOL:\n' +
+    '- When tool results are provided, ALWAYS incorporate the specific data\n' +
+    '- Never ignore tool results — they are ground truth for your response\n' +
+    '- If multiple tools return data, cross-reference and synthesize\n' +
+    '- Format tool data clearly with bold key figures';
 
   var MODES = {
     general: {
       label: 'Chat',
-      prompt: ID + CORE + '\n\nMODE: General\n- Thorough when needed, concise when not\n- Adapt tone to user energy\n- Creative requests: offer multiple directions\n- Factual questions: be precise, use tools when relevant\n- Multi-part questions: address each part\n- Emotional topics: empathetic but honest'
+      prompt: ID + CORE + '\n\nMODE: General Conversation\n' +
+        '- Thorough when the topic demands it, concise when it does not\n' +
+        '- Adapt tone to match the user energy and formality level\n' +
+        '- Creative requests: offer 2-3 distinct directions before diving in\n' +
+        '- Factual questions: be precise, cite specific numbers when available\n' +
+        '- Multi-part questions: address each part explicitly with clear labels\n' +
+        '- Emotional topics: empathetic but honest, never patronizing\n' +
+        '- Opinions: give balanced perspectives, let the user decide\n' +
+        '- If the user seems frustrated, slow down and be extra clear'
     },
     research: {
       label: 'Research',
-      prompt: ID + CORE + '\n\nMODE: Deep Research\n1. ## Overview (2-3 sentences)\n2. ## Analysis with ### sub-sections\n3. Each section: finding → significance → evidence\n4. Multiple perspectives with ### labels\n5. **Bold** key data points\n6. Blockquotes for caveats\n7. ## Key Takeaways (3-5 points)\n8. ## Further Research (2-3 directions)\n9. USE TOOLS when relevant — Wikipedia, countries, weather etc.\n10. Chain tools: get country info, then weather for its capital'
+      prompt: ID + CORE + '\n\nMODE: Deep Research Agent\n' +
+        'STRUCTURE every response:\n' +
+        '1. ## Overview (2-3 sentence executive summary)\n' +
+        '2. ## Detailed Analysis with ### sub-sections for each angle\n' +
+        '3. Each section: finding → significance → supporting evidence\n' +
+        '4. Multiple perspectives with ### Perspective labels\n' +
+        '5. **Bold** all key data points, statistics, and names\n' +
+        '6. Use > blockquotes for caveats, limitations, and uncertainties\n' +
+        '7. ## Key Takeaways (3-5 numbered points)\n' +
+        '8. ## Further Research (2-3 specific directions with why)\n' +
+        '9. USE TOOLS aggressively — Wikipedia, countries, weather, etc.\n' +
+        '10. CHAIN TOOLS: get country info, then weather for its capital, etc.\n' +
+        '11. Compare data from multiple sources when possible\n' +
+        '12. Flag confidence level for each claim (high/medium/low)'
     },
     coding: {
       label: 'Code',
-      prompt: ID + CORE + '\n\nMODE: Vibe Coding\n1. Explain approach (2-3 sentences) before code\n2. COMPLETE runnable code — no partial snippets\n3. Correct language tags in code blocks\n4. HTML/CSS/JS: full self-contained files\n5. Comments for non-obvious logic only\n6. Idiomatic conventions, edge cases, error handling\n7. ### How it works after code\n8. 2-3 improvements as numbered list\n9. Debugging: root cause → fix → why\n10. Broken code: list ALL issues then complete fix\n11. Self-review: off-by-one, null checks, types'
+      prompt: ID + CORE + '\n\nMODE: Vibe Coding Agent\n' +
+        'PROCESS for every code request:\n' +
+        '1. Explain your approach in 2-3 sentences before any code\n' +
+        '2. Write COMPLETE, runnable code — absolutely no partial snippets\n' +
+        '3. Use correct language tags in code blocks (html, javascript, python, etc.)\n' +
+        '4. HTML/CSS/JS: provide full self-contained files with doctype\n' +
+        '5. Add comments ONLY for non-obvious logic — no obvious comments\n' +
+        '6. Follow idiomatic conventions for the language, handle edge cases\n' +
+        '7. After code: ### How it works — brief explanation\n' +
+        '8. List 2-3 improvements as a numbered list\n' +
+        '9. Debugging: root cause → fix → explanation of why it works\n' +
+        '10. Broken code: list ALL issues first, then provide complete fixed version\n' +
+        '11. Self-review checklist: off-by-one errors, null checks, type coercion\n' +
+        '12. For complex logic: add a brief "Approach" section before code\n' +
+        '13. Performance: note O() complexity when relevant'
     }
   };
 
   var THINK = {
     general: ['Understanding...', 'Checking tools...', 'Reasoning...', 'Writing...'],
-    research: ['Identifying angles...', 'Fetching data...', 'Analyzing...', 'Structuring...', 'Synthesizing...'],
-    coding: ['Understanding...', 'Planning...', 'Writing code...', 'Reviewing...', 'Improving...']
+    research: ['Identifying angles...', 'Fetching data...', 'Cross-referencing...', 'Analyzing...', 'Structuring...', 'Synthesizing...'],
+    coding: ['Understanding...', 'Planning architecture...', 'Writing code...', 'Reviewing logic...', 'Testing edge cases...', 'Improving...']
   };
 
-  /* Memory */
+  /* Memory System */
   var Mem = {
     _k: 'os_mem',
-    _g: function() { try { return JSON.parse(localStorage.getItem(this._k) || '{}'); } catch(e) { return {}; } },
-    _s: function(d) { localStorage.setItem(this._k, JSON.stringify(d)); },
-    remember: function(k, v, c) { var d = this._g(); d[k.toLowerCase()] = { v: v, c: c || 'fact', t: Date.now() }; this._s(d); },
-    forget: function(k) { var d = this._g(); delete d[k.toLowerCase()]; this._s(d); },
-    recall: function(q) {
-      var d = this._g(), ql = q.toLowerCase(), r = [];
-      Object.keys(d).forEach(function(k) { if (k.indexOf(ql) !== -1 || d[k].v.toLowerCase().indexOf(ql) !== -1) r.push({ key: k, value: d[k].v, cat: d[k].c }); });
-      return r.sort(function(a, b) { return b.t - a.t; });
+    _g: function () {
+      try { return JSON.parse(localStorage.getItem(this._k) || '{}'); }
+      catch (e) { return {}; }
     },
-    count: function() { return Object.keys(this._g()).length; },
-    clear: function() { localStorage.removeItem(this._k); },
-    context: function() {
+    _s: function (d) {
+      try { localStorage.setItem(this._k, JSON.stringify(d)); }
+      catch (e) { /* storage full — silently fail */ }
+    },
+    remember: function (k, v, c) {
+      var d = this._g();
+      d[k.toLowerCase()] = { v: v, c: c || 'fact', t: Date.now() };
+      this._s(d);
+    },
+    forget: function (k) {
+      var d = this._g();
+      delete d[k.toLowerCase()];
+      this._s(d);
+    },
+    recall: function (q) {
+      var d = this._g(), ql = q.toLowerCase(), r = [];
+      Object.keys(d).forEach(function (k) {
+        if (k.indexOf(ql) !== -1 || d[k].v.toLowerCase().indexOf(ql) !== -1) {
+          r.push({ key: k, value: d[k].v, cat: d[k].c, time: d[k].t });
+        }
+      });
+      return r.sort(function (a, b) { return b.time - a.time; });
+    },
+    count: function () {
+      return Object.keys(this._g()).length;
+    },
+    clear: function () {
+      localStorage.removeItem(this._k);
+    },
+    context: function () {
       var d = this._g(), e = Object.entries(d);
       if (!e.length) return '';
       var c = '\n[MEMORY (' + e.length + ' entries)]:\n';
-      e.forEach(function(x) { c += '- [' + (x[1].c || 'fact').toUpperCase() + '] ' + x[0] + ': ' + x[1].v + '\n'; });
+      e.forEach(function (x) {
+        c += '- [' + (x[1].c || 'fact').toUpperCase() + '] ' + x[0] + ': ' + x[1].v + '\n';
+      });
       return c + '[END MEMORY]\n';
     },
-    matchMemory: function(t) {
-      var triggers = ['do you remember', 'you remember', 'what did i tell', 'what have i told', 'what do you know about me', 'my name is', 'i live in', 'i work at', 'i am a', 'i like', 'i prefer', 'my favorite', 'forget that', 'don\'t remember'];
+    matchMemory: function (t) {
+      var triggers = [
+        'do you remember', 'you remember', 'what did i tell', 'what have i told',
+        'what do you know about me', 'my name is', 'i live in', 'i work at',
+        'i am a', 'i like', 'i prefer', 'my favorite', 'forget that',
+        "don't remember", 'what can you recall'
+      ];
       var l = t.toLowerCase();
-      for (var i = 0; i < triggers.length; i++) if (l.indexOf(triggers[i]) !== -1) return true;
+      for (var i = 0; i < triggers.length; i++) {
+        if (l.indexOf(triggers[i]) !== -1) return true;
+      }
       var d = this._g(), keys = Object.keys(d);
-      for (var j = 0; j < keys.length; j++) if (l.indexOf(keys[j]) !== -1) return true;
+      for (var j = 0; j < keys.length; j++) {
+        if (l.indexOf(keys[j]) !== -1) return true;
+      }
       return false;
     }
   };
 
+  /* Route: determine which tools to call and memory actions */
   function route(text) {
     var matches = [], seen = {};
     if (Mem.matchMemory(text)) return { tools: [], memRecall: true };
     var tools = Agent._tools || [];
-    tools.forEach(function(t) {
+    tools.forEach(function (t) {
       var q = t.match(text);
-      if (q && !seen[t.id]) { seen[t.id] = true; matches.push({ tool: t, query: q }); }
+      if (q && !seen[t.id]) {
+        seen[t.id] = true;
+        matches.push({ tool: t, query: q });
+      }
     });
     var rem = text.match(/(?:remember|note|save|store|keep in mind|don'?t forget)\s+(?:that|this|the fact)?\s*:?\s*(.+)/i);
     if (rem) return { tools: matches, memStore: rem[1].trim().slice(0, 300) };
@@ -101,15 +185,18 @@ var Agent = (function() {
   }
 
   var mode = 'general';
+
   return {
-    modes: MODES, memory: Mem, route: route,
+    modes: MODES,
+    memory: Mem,
+    route: route,
     _tools: null,
-    registerTools: function(t) { this._tools = t; },
-    getTools: function() { return this._tools || []; },
-    setMode: function(m) { if (MODES[m]) mode = m; },
-    getMode: function() { return mode; },
-    sys: function() { return MODES[mode].prompt + Mem.context(); },
-    label: function() { return MODES[mode].label; },
-    steps: function() { return THINK[mode]; }
+    registerTools: function (t) { this._tools = t; },
+    getTools: function () { return this._tools || []; },
+    setMode: function (m) { if (MODES[m]) mode = m; },
+    getMode: function () { return mode; },
+    sys: function () { return MODES[mode].prompt + Mem.context(); },
+    label: function () { return MODES[mode].label; },
+    steps: function () { return THINK[mode]; }
   };
 })();
