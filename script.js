@@ -4,6 +4,6 @@ const apiKey = process.env.OPENKEY;
 if (!apiKey) { console.error('Error: OPENKEY secret is missing.'); process.exit(1); }
 const p = path.join(__dirname, 'app.js');
 let a = fs.readFileSync(p, 'utf8');
-a = a.replace("var KEY_PH = '__OPENKEY__'", "var KEY_PH = '" + apiKey + "'");
+a = a.replace(/KEY_PH = '__OPENKEY__'/, "KEY_PH = '" + apiKey + "'");
 fs.writeFileSync(p, '/* built */\n' + a);
 console.log('Key injected');
