@@ -13,13 +13,8 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <canvas id="bgCanvas"></canvas>
-
-<!-- Sidebar Overlay (mobile) -->
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-<!-- Sidebar -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-head">
     <div class="logo">
@@ -28,25 +23,17 @@
     </div>
     <div class="logo-sub">by Hafij Shaikh</div>
   </div>
-
   <div class="mode-selector" id="modeSelector">
     <button class="mode-btn active" data-mode="general"><i class="fas fa-comment" style="font-size:9px"></i> Chat</button>
     <button class="mode-btn" data-mode="research"><i class="fas fa-flask" style="font-size:9px"></i> Research</button>
     <button class="mode-btn" data-mode="coding"><i class="fas fa-code" style="font-size:9px"></i> Code</button>
   </div>
-
-  <button class="new-btn" id="newChatBtn">
-    <i class="fas fa-plus" style="font-size:9px"></i> New chat
-  </button>
-
+  <button class="new-btn" id="newChatBtn"><i class="fas fa-plus" style="font-size:9px"></i> New chat</button>
   <div class="chat-list" id="chatList"></div>
-
   <div class="sidebar-foot">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <div class="model-info">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="modelLabel">openrouter/free</span>
-      </div>
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="model-info" id="modelLabel">openrouter/free</span>
     </div>
     <div style="display:flex;gap:4px">
       <button class="icon-btn" id="clearChatBtn" title="Clear chat"><i class="fas fa-eraser" style="font-size:10px"></i></button>
@@ -54,25 +41,17 @@
     </div>
   </div>
 </aside>
-
-<!-- Main -->
 <main class="main">
   <div class="topbar">
     <button class="icon-btn mobile-only" id="menuToggle" title="Menu"><i class="fas fa-bars" style="font-size:11px"></i></button>
     <span class="topbar-title" id="topbarTitle">opensky</span>
     <span class="topbar-mode" id="topbarMode">Chat</span>
     <span class="topbar-spacer"></span>
-    <button class="icon-btn" id="keyBannerTop" title="API Key" style="display:none"><i class="fas fa-key" style="font-size:10px"></i></button>
   </div>
-
   <div class="chat-area" id="chatArea">
     <div class="chat-messages" id="chatMessages"></div>
   </div>
-
-  <!-- File Preview -->
   <div class="file-preview" id="filePreview"></div>
-
-  <!-- Input Area -->
   <div class="input-area">
     <div class="input-wrap">
       <div class="attach-wrap">
@@ -80,15 +59,9 @@
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M13.5 3.5a3.5 3.5 0 00-5 0L4 8l6.5 6.5L15 10a3.5 3.5 0 000-5l-1.5-1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4 8l-1.5 4 4-1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="attach-menu" id="attachMenu">
-          <button class="attach-opt" data-type="image">
-            <i class="fas fa-image" style="font-size:11px;width:16px;text-align:center;color:var(--g2)"></i> Image
-          </button>
-          <button class="attach-opt" data-type="video">
-            <i class="fas fa-video" style="font-size:11px;width:16px;text-align:center;color:var(--g2)"></i> Video
-          </button>
-          <button class="attach-opt" data-type="document">
-            <i class="fas fa-file-lines" style="font-size:11px;width:16px;text-align:center;color:var(--g2)"></i> Document
-          </button>
+          <button class="attach-opt" data-type="image"><i class="fas fa-image" style="font-size:11px;width:16px;text-align:center;color:var(--g2)"></i> Image</button>
+          <button class="attach-opt" data-type="video"><i class="fas fa-video" style="font-size:11px;width:16px;text-align:center;color:var(--g2)"></i> Video</button>
+          <button class="attach-opt" data-type="document"><i class="fas fa-file-lines" style="font-size:11px;width:16px;text-align:center;color:var(--g2)"></i> Document</button>
         </div>
       </div>
       <div class="input-box">
@@ -101,8 +74,6 @@
     <input type="file" id="fileInput" multiple hidden>
   </div>
 </main>
-
-<!-- Code Runner -->
 <div class="code-runner" id="codeRunner">
   <div class="runner-head">
     <span><i class="fas fa-play" style="font-size:9px;margin-right:6px;opacity:.5"></i>Live Preview</span>
@@ -113,11 +84,7 @@
   </div>
   <iframe class="runner-frame" id="runnerFrame" sandbox="allow-scripts allow-modals allow-forms allow-same-origin" title="Code Preview"></iframe>
 </div>
-
-<!-- Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
-
-<!-- Scripts — order matters -->
 <script src="agent.js"></script>
 <script src="tools.js"></script>
 <script src="planner.js"></script>
