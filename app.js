@@ -7,7 +7,7 @@
   /* ── Config ───────────────────────────────────────── */
   var API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   var API_MODEL = 'openrouter/free';
-  var KEY_PH = '__OS_KEY_PLACEHOLDER__';
+  var KEY_PH = '';
 
   /* ── SVG Icons ────────────────────────────────────── */
   var ICON_SEND = '<svg width="15" height="15" viewBox="0 0 18 18" fill="none"><path d="M3 9h12M10 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
