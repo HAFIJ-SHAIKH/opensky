@@ -31,6 +31,10 @@ jobs:
           cp index.html build/ 2>/dev/null || true
           cp style.css build/ 2>/dev/null || true
           cp app.js build/
+          cp agent.js build/
+          cp tools.js build/
+          cp planner.js build/
+          cp enhance.js build/
           node script.js
 
       - uses: actions/configure-pages@v5
