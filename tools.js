@@ -15,6 +15,13 @@
   /* ── Safe JSON parse helper ──────────────────────── */
   function sj(r) { return r.json().catch(function () { return {}; }); }
 
+  /* ── Simple hash for generating memory keys ───────── */
+  function simpleHash(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return 'mem_' + Math.abs(h).toString(36);
+  }
+
   /* ── Country name list for smart matching ────────── */
   var COUNTRIES = [
     'japan','china','india','usa','uk','united states','united kingdom','germany','france',
@@ -29,10 +36,41 @@
 
   function isCountry(s) {
     var low = s.toLowerCase().trim();
+    /* Exact match first */
     for (var i = 0; i < COUNTRIES.length; i++) {
-      if (low === COUNTRIES[i] || low.indexOf(COUNTRIES[i]) !== -1 || COUNTRIES[i].indexOf(low) !== -1) return true;
+      if (low === COUNTRIES[i]) return true;
+    }
+    /* Word-boundary match: input must appear as a whole word in country name, or vice versa */
+    for (var j = 0; j < COUNTRIES.length; j++) {
+      var re1 = new RegExp('(?:^|\\s)' + low.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:\\s|$)', 'i');
+      if (re1.test(COUNTRIES[j])) return true;
+      var re2 = new RegExp('(?:^|\\s)' + COUNTRIES[j].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:\\s|$)', 'i');
+      if (re2.test(low)) return true;
     }
     return false;
+  }
+
+  /* ── Fisher-Yates shuffle ────────────────────────── */
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  /* ── UUID fallback for older browsers ────────────── */
+  function genUUID() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    var buf = new Uint8Array(16);
+    crypto.getRandomValues(buf);
+    buf[6] = (buf[6] & 0x0f) | 0x40; /* version 4 */
+    buf[8] = (buf[8] & 0x3f) | 0x80; /* variant */
+    var hex = Array.from(buf).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
   var T = [
@@ -124,7 +162,7 @@
       id: 'uni', name: 'Universities', icon: '\u{1F393}',
       match: function (t) { var m = t.match(/(?:universit(?:y|ies)|college|school)\s+(?:in|at|of)\s+(.+)/i); return m ? m[1].replace(/[?.!,]+$/, '').trim() : null; },
       exec: function (q) {
-        return tfetch('http://universities.hipolabs.com/search?country=' + encodeURIComponent(q) + '&limit=5')
+        return tfetch('https://universities.hipolabs.com/search?country=' + encodeURIComponent(q) + '&limit=5')
           .then(function (r) { return r.json(); })
           .then(function (d) {
             if (!d.length) return 'No universities found for: ' + q;
@@ -152,7 +190,7 @@
           'uniswap','uni','shiba','shib','shiba inu','tron','trx','ton','pepe','wif','dogwifhat',
           'near','aptos','apt','arbitrum','arb','optimism','op','sui','sei','injective','inj',
           'fantom','ftm','cosmos','atom','render','render token','rune','thorchain','stellar','xlm',
-          'litecoin','ltc','bitcoin cash','bch','polkadot','filecoin','fil','vechain','vet',
+          'litecoin','ltc','bitcoin cash','bch','filecoin','fil','vechain','vet',
           'hedera','hbar','algorand','algo','tezos','xtz','aave','maker','mkr','compound','comp'
         ];
         var low = t.toLowerCase();
@@ -287,7 +325,10 @@
             if (!d.results || !d.results.length) return 'Could not fetch trivia.';
             var q = d.results[0];
             var qt = q.question.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-            var a = [q.correct_answer, q.incorrect_answer].concat(q.incorrect_answers).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).sort(function () { return Math.random() - 0.5; });
+            /* Only use the correct plural field — filter out nulls */
+            var a = [q.correct_answer].concat(q.incorrect_answers || [])
+              .filter(function (x) { return x != null && x !== ''; });
+            a = shuffle(a);
             return '**' + q.category + '** (' + q.difficulty + ')\n\n' + qt + '\n\n' +
               a.map(function (x, i) { return String.fromCharCode(65 + i) + ') ' + x; }).join('\n') +
               '\n\n||Answer: **' + q.correct_answer + '**||';
@@ -374,7 +415,7 @@
               '\nStats: HP:' + d.stats[0].base_stat + ' ATK:' + d.stats[1].base_stat + ' DEF:' + d.stats[2].base_stat + ' SP.ATK:' + d.stats[3].base_stat + ' SP.DEF:' + d.stats[4].base_stat + ' SPD:' + d.stats[5].base_stat +
               '\n[Sprite](' + d.sprites.front_default + ')';
           })
-          .catch(function () { return 'Pok\u00E9mon not found: ' + q; }); 
+          .catch(function () { return 'Pok\u00E9mon not found: ' + q; });
       }
     },
 
@@ -495,7 +536,7 @@
         pw += nums[Math.floor(Math.random() * nums.length)];
         pw += syms[Math.floor(Math.random() * syms.length)];
         for (var i = 4; i < 18; i++) pw += all[Math.floor(Math.random() * all.length)];
-        pw = pw.split('').sort(function () { return Math.random() - 0.5; }).join('');
+        pw = shuffle(pw.split('')).join('');
         var strength = 'Strong';
         if (pw.length < 12) strength = 'Moderate';
         return '**Generated password:** `' + pw + '`\nLength: ' + pw.length + ' characters | Strength: ' + strength + '\nContains: lowercase, uppercase, numbers, symbols';
@@ -519,7 +560,7 @@
     {
       id: 'uuid', name: 'UUID', icon: '\u{1F195}',
       match: function (t) { return /(?:generate|create|get|new)\s*(?:a\s+)?(?:uuid|guid|unique\s*id)/i.test(t) ? 'r' : null; },
-      exec: function () { return '**' + crypto.randomUUID() + '**\nVersion 4 UUID, randomly generated.'; }
+      exec: function () { return '**' + genUUID() + '**\nVersion 4 UUID, randomly generated.'; }
     },
 
     {
@@ -534,7 +575,7 @@
       id: 'num', name: 'Number Fact', icon: '\u{1F522}',
       match: function (t) { var m = t.match(/(?:fact|trivia)\s+(?:about\s+)?(?:the\s+)?number\s+(\d+)/i); return m ? m[1] : null; },
       exec: function (n) {
-        return tfetch('http://numbersapi.com/' + n + '?json')
+        return tfetch('https://numbersapi.com/' + n + '?json')
           .then(sj)
           .then(function (d) { return '**' + d.number + '**: ' + d.text + (d.found ? '' : ' (no fact found)'); })
           .catch(function () { return 'Could not fetch fact for number ' + n + '.'; });
@@ -614,7 +655,7 @@
             '\n\n**SHA-256:** `' + hex(bufs[0]) + '`' +
             '\n**SHA-1:** `' + hex(bufs[1]) + '`' +
             '\n**SHA-512:** `' + hex(bufs[2]) + '`';
-        });
+        }).catch(function () { return 'Could not generate hashes — crypto.subtle may not be available in this context.'; });
       }
     }
   ];
@@ -653,8 +694,9 @@
   function handleMem(rr, text) {
     var ctx = '';
     if (rr.memStore) {
-      var w = rr.memStore.split(/\s+/).slice(0, 4).join(' ');
-      Agent.memory.remember(w, rr.memStore, 'fact');
+      /* Use a hash of the value as key — avoids collisions from first-4-words approach */
+      var key = simpleHash(rr.memStore);
+      Agent.memory.remember(key, rr.memStore, 'fact');
       ctx = '\n[SYSTEM: Stored to memory: "' + rr.memStore.slice(0, 80) + '". Acknowledge briefly if the user explicitly asked to remember it.]\n';
     }
     if (rr.memForget) {
