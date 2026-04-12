@@ -101,6 +101,21 @@ var Agent = (function () {
     coding: ['Understanding...', 'Planning architecture...', 'Writing code...', 'Reviewing logic...', 'Testing edge cases...', 'Improving...']
   };
 
+  /* ── Tokenize helper — splits on word boundaries ── */
+  function tokenize(s) {
+    return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; });
+  }
+
+  /* ── Check if all tokens in `need` appear in `hay` ── */
+  function tokensMatch(need, hay) {
+    var nt = tokenize(need), ht = tokenize(hay);
+    if (!nt.length) return false;
+    for (var i = 0; i < nt.length; i++) {
+      if (ht.indexOf(nt[i]) === -1) return false;
+    }
+    return true;
+  }
+
   /* Memory System */
   var Mem = {
     _k: 'os_mem',
@@ -119,17 +134,33 @@ var Agent = (function () {
     },
     forget: function (k) {
       var d = this._g();
-      delete d[k.toLowerCase()];
+      /* Delete any key whose name contains the query tokens */
+      var kt = tokenize(k);
+      var keys = Object.keys(d);
+      for (var i = 0; i < keys.length; i++) {
+        if (tokensMatch(k, keys[i])) delete d[keys[i]];
+      }
       this._s(d);
     },
     recall: function (q) {
-      var d = this._g(), ql = q.toLowerCase(), r = [];
-      Object.keys(d).forEach(function (k) {
-        if (k.indexOf(ql) !== -1 || d[k].v.toLowerCase().indexOf(ql) !== -1) {
-          r.push({ key: k, value: d[k].v, cat: d[k].c, time: d[k].t });
+      var d = this._g(), r = [];
+      var keys = Object.keys(d);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        /* Match if query tokens appear in the key OR in the stored value */
+        var inKey = tokensMatch(q, k);
+        var inVal = tokensMatch(q, d[k].v);
+        if (inKey || inVal) {
+          /* Score: more token matches = higher relevance */
+          var qt = tokenize(q), score = 0;
+          var kt2 = tokenize(k);
+          for (var j = 0; j < qt.length; j++) { if (kt2.indexOf(qt[j]) !== -1) score += 2; }
+          var vt = tokenize(d[k].v);
+          for (var j2 = 0; j2 < qt.length; j2++) { if (vt.indexOf(qt[j2]) !== -1) score += 1; }
+          r.push({ key: k, value: d[k].v, cat: d[k].c, time: d[k].t, score: score });
         }
-      });
-      return r.sort(function (a, b) { return b.time - a.time; });
+      }
+      return r.sort(function (a, b) { return b.score - a.score || b.time - a.time; });
     },
     count: function () {
       return Object.keys(this._g()).length;
@@ -147,19 +178,21 @@ var Agent = (function () {
       return c + '[END MEMORY]\n';
     },
     matchMemory: function (t) {
+      /* Only true RECALL queries — "remember" removed to avoid conflict with store */
       var triggers = [
         'do you remember', 'you remember', 'what did i tell', 'what have i told',
         'what do you know about me', 'my name is', 'i live in', 'i work at',
-        'i am a', 'i like', 'i prefer', 'my favorite', 'forget that',
+        'i am a', 'i like', 'i prefer', 'my favorite',
         "don't remember", 'what can you recall'
       ];
       var l = t.toLowerCase();
       for (var i = 0; i < triggers.length; i++) {
         if (l.indexOf(triggers[i]) !== -1) return true;
       }
+      /* Also check if query tokens match any stored key */
       var d = this._g(), keys = Object.keys(d);
       for (var j = 0; j < keys.length; j++) {
-        if (l.indexOf(keys[j]) !== -1) return true;
+        if (tokensMatch(t, keys[j])) return true;
       }
       return false;
     }
@@ -168,7 +201,6 @@ var Agent = (function () {
   /* Route: determine which tools to call and memory actions */
   function route(text) {
     var matches = [], seen = {};
-    if (Mem.matchMemory(text)) return { tools: [], memRecall: true };
     var tools = Agent._tools || [];
     tools.forEach(function (t) {
       var q = t.match(text);
@@ -177,10 +209,18 @@ var Agent = (function () {
         matches.push({ tool: t, query: q });
       }
     });
+
+    /* Check store FIRST — before recall, so "remember that..." saves instead of recalls */
     var rem = text.match(/(?:remember|note|save|store|keep in mind|don'?t forget)\s+(?:that|this|the fact)?\s*:?\s*(.+)/i);
     if (rem) return { tools: matches, memStore: rem[1].trim().slice(0, 300) };
+
+    /* Check forget SECOND */
     var fgt = text.match(/(?:forget|delete|remove)\s+(?:about\s+)?(?:the\s+)?(?:memory\s+)?(.+)/i);
     if (fgt) return { tools: matches, memForget: fgt[1].trim().slice(0, 100) };
+
+    /* Check recall LAST — only if no store/forget intent detected */
+    if (Mem.matchMemory(text)) return { tools: [], memRecall: true };
+
     return { tools: matches, memRecall: false };
   }
 
