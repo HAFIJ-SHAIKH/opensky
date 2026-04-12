@@ -6,4 +6,4 @@ const p = path.join(__dirname, 'app.js');
 let a = fs.readFileSync(p, 'utf8');
 a = a.replace('__OPENKEY__', apiKey);
 fs.writeFileSync(p, '/* built */\n' + a);
-console.log('Key injected');
+console.log('Key injected: ' + apiKey.slice(0, 8) + '...');
