@@ -29,9 +29,7 @@ jobs:
           key = os.environ.get("OPENKEY", "")
 
           if not key or len(key) < 10:
-              print("FAILED: OPENKEY secret is missing or too short (got length " + str(len(key)) + ")")
-              print("Fix: Go to Repo > Settings > Secrets and variables > Actions > Repository secrets")
-              print("Click 'New repository secret', Name: OPENKEY, Value: your-key-here")
+              print("FAILED: OPENKEY secret is missing or too short (length: " + str(len(key)) + ")")
               sys.exit(1)
 
           print("Secret found. Length: " + str(len(key)))
@@ -46,21 +44,43 @@ jobs:
               else:
                   print("WARNING: " + f + " not found, skipping")
 
-          with open("build/app.js", "r") as file:
+          # utf-8-sig removes hidden BOM characters if your editor added them
+          with open("build/app.js", "r", encoding="utf-8-sig") as file:
               content = file.read()
 
-          placeholder = "var KEY_PH = 'NONE';"
+          new_content = None
 
-          if placeholder not in content:
-              print("FAILED: Could not find 'var KEY_PH = NONE;' in build/app.js")
+          # Check for single quotes
+          if "var KEY_PH = 'NONE';" in content:
+              new_content = content.replace("var KEY_PH = 'NONE';", "var KEY_PH = '" + key + "';")
+              print("Matched: Single quotes with NONE")
+
+          # Check for double quotes
+          elif 'var KEY_PH = "NONE";' in content:
+              new_content = content.replace('var KEY_PH = "NONE";', 'var KEY_PH = "' + key + '";')
+              print("Matched: Double quotes with NONE")
+
+          # Check for empty single quotes
+          elif "var KEY_PH = '';" in content:
+              new_content = content.replace("var KEY_PH = '';", "var KEY_PH = '" + key + "';")
+              print("Matched: Empty single quotes")
+
+          # Check for empty double quotes
+          elif 'var KEY_PH = "";' in content:
+              new_content = content.replace('var KEY_PH = "";', 'var KEY_PH = "' + key + '";')
+              print("Matched: Empty double quotes")
+
+          if new_content:
+              with open("build/app.js", "w", encoding="utf-8") as file:
+                  file.write(new_content)
+              print("SUCCESS: Key injected into build/app.js")
+          else:
+              print("FAILED: Could not find var KEY_PH in app.js")
+              print("Showing first 20 lines of app.js for debugging:")
+              for i, line in enumerate(content.split('\n')[:20]):
+                  print(str(i) + ": " + line)
               sys.exit(1)
 
-          new_content = content.replace(placeholder, "var KEY_PH = '" + key + "';")
-
-          with open("build/app.js", "w") as file:
-              file.write(new_content)
-
-          print("SUCCESS: Key injected into build/app.js")
           PYEOF
 
       - uses: actions/configure-pages@v5
