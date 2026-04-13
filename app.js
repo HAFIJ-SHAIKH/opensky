@@ -48,8 +48,8 @@
 
   if (!$msgs || !$inp || !$btn) { console.error('opensky: missing DOM'); return; }
 
-  /* ── Key (decoded from base64, injected by script.js) ─ */
-  function getKey() { return KEY_PH === 'NONE' ? '' : (typeof atob === 'function' ? atob(KEY_PH) : KEY_PH); }
+    /* ── Key (decoded from base64 by sed in deploy.yml) ─ */
+  function getKey() { return KEY_PH === 'NONE' ? '' : KEY_PH; }
   function hasKey() { return KEY_PH !== 'NONE' && KEY_PH.length > 10; }
 
   /* ── HTML escape — also defined locally in planner.txt (intentional, separate IIFE scope) ── */
