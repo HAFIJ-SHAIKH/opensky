@@ -19,29 +19,59 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Copy files
+        run: |
+          mkdir -p build
+          cp index.html style.css app.js agent.js tools.js planner.js enhance.js build/
+
+      - name: Inject API Key
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
+        run: node -e "
+          const fs = require('fs');
+          const key = process.env.OPENKEY;
+
+          if (!key || key.trim().length < 10) {
+            console.error('FAILED: OPENKEY secret is missing or too short');
+            console.error('Length received: ' + (key ? key.length : 0));
+            process.exit(1);
+          }
+
+          let content = fs.readFileSync('build/app.js', 'utf8');
+          const placeholder = \"var KEY_PH = 'NONE';\";
+
+          if (content.indexOf(placeholder) === -1) {
+            console.error('FAILED: Placeholder not found in build/app.js');
+            process.exit(1);
+          }
+
+          const encoded = Buffer.from(key.trim()).toString('base64');
+          const replacement = \"var KEY_PH = atob('\" + encoded + \"');\";
+          content = content.replace(placeholder, replacement);
+          fs.writeFileSync('build/app.js', content);
+
+          console.log('SUCCESS: Key injected into build/app.js');
+          console.log('Key length: ' + key.trim().length);
+          console.log('Base64 length: ' + encoded.length);
+        "
+
+      - name: Verify injection
         run: |
-          if [ -z "$OPENKEY" ]; then
-            echo "OPENKEY secret is missing"
+          if grep -q "var KEY_PH = 'NONE';" build/app.js; then
+            echo "FAILED: Placeholder was NOT replaced"
             exit 1
           fi
-
-          mkdir -p build
-
-          for f in index.html style.css app.js agent.js tools.js planner.js enhance.js; do
-            if [ -f "$f" ]; then
-              cp "$f" build/
-            fi
-          done
-
-          ENCODED=$(printf '%s' "$OPENKEY" | base64 -w0)
-
-          PLACEHOLDER="var KEY_PH = 'NONE';"
-          REPLACEMENT="var KEY_PH = atob('${ENCODED}');"
-
-          sed -i "s|${PLACEHOLDER}|${REPLACEMENT}|" build/app.js
+          if grep -q "atob(" build/app.js; then
+            echo "VERIFIED: Key injection confirmed in build/app.js"
+          else
+            echo "FAILED: atob() not found, injection did not work"
+            exit 1
+          fi
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
