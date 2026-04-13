@@ -19,6 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug — Check Secret
+        env:
+          OPENKEY: ${{ secrets.OPENKEY }}
+        run: |
+          echo "=== SECRET DIAGNOSTIC ==="
+          echo "Is env var SET at all?"
+          if [ -z "${OPENKEY+x}" ]; then
+              echo "NO — env var does not exist (secret not found or wrong name)"
+          else
+              echo "YES — env var exists"
+          fi
+          echo "Length: ${#OPENKEY}"
+          echo "First 3 chars: ${OPENKEY:0:3}"
+          echo "Last 3 chars: ${OPENKEY: -3}"
+          echo ""
+          echo "=== CHECKING ALTERNATE NAMES ==="
+          echo "OPEN_KEY length: ${#OPEN_KEY}"
+          echo "openkey length: ${#openkey}"
+          echo "OPENROUTER_KEY length: ${#OPENROUTER_KEY}"
+          echo "API_KEY length: ${#API_KEY}"
+          echo "=========================="
+
       - name: Build
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
@@ -26,10 +48,22 @@ jobs:
           python3 << 'PYEOF'
           import os, sys, re
 
-          key = os.environ.get("OPENKEY", "")
+          key = os.environ.get("OPENKEY")
+          print("=== PYTHON DIAGNOSTIC ===")
+          print("os.environ.get('OPENKEY') type: " + str(type(key)))
+          print("os.environ.get('OPENKEY') value: " + repr(key))
+          print("Length: " + str(len(key) if key else 0))
+          print("=========================")
 
           if not key or len(key) < 10:
-              print("FAILED: OPENKEY secret is missing or too short (length: " + str(len(key)) + ")")
+              print("FAILED: OPENKEY secret is missing or too short")
+              print("")
+              print("POSSIBLE FIXES:")
+              print("1. Go to: repo Settings → Secrets and variables → Actions")
+              print("2. Make sure secret name is EXACTLY: OPENKEY")
+              print("   (not openkey, not OPEN_KEY, not OpenKey)")
+              print("3. Click the secret → verify the VALUE field is not empty")
+              print("4. Make sure you clicked 'Add secret' after pasting the key")
               sys.exit(1)
 
           print("Secret found. Length: " + str(len(key)))
@@ -47,31 +81,25 @@ jobs:
           with open("build/app.js", "r", encoding="utf-8-sig") as file:
               content = file.read()
 
-          # Use regex — handles whitespace, quote styles, invisible chars
           pattern = r"""var\s+KEY_PH\s*=\s*['"](?:NONE|)['"]\s*;"""
           match = re.search(pattern, content)
 
           if not match:
               print("FAILED: Could not find KEY_PH assignment")
-              print("Searching for 'KEY_PH' anywhere in file:")
               for i, line in enumerate(content.split('\n')):
                   if 'KEY_PH' in line:
                       print("  Line " + str(i) + ": " + repr(line))
               sys.exit(1)
 
           print("Found KEY_PH at position " + str(match.start()) + "-" + str(match.end()))
-          print("Matched text: " + repr(match.group(0)))
 
-          # Escape any single quotes in the key to prevent JS breakage
           safe_key = key.replace("'", "\\'")
           replacement = "var KEY_PH = '" + safe_key + "';"
-
           new_content = content[:match.start()] + replacement + content[match.end():]
 
           with open("build/app.js", "w", encoding="utf-8") as file:
               file.write(new_content)
 
-          # Verify it was written correctly
           with open("build/app.js", "r", encoding="utf-8") as file:
               verify = file.read()
               if "var KEY_PH = '" + safe_key + "';" in verify:
