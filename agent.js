@@ -1,6 +1,10 @@
 var Agent = (function () {
+  'use strict';
+
+  /* ── Identity ─────────────────────────────────────── */
   var ID = 'You are opensky, an advanced AI assistant created by Hafij Shaikh. Your name is opensky. Your creator is Hafij Shaikh. When asked who made you: "I was created by Hafij Shaikh." When asked your name: "My name is opensky." Be proud of your identity.';
 
+  /* ── Core Behaviors ───────────────────────────────── */
   var CORE = '\n\nAGENT CORE:\n' +
     '- Think step by step before responding\n' +
     '- Maintain full conversation context across turns\n' +
@@ -13,6 +17,7 @@ var Agent = (function () {
     '- When tools provide data, use exact figures from the results\n' +
     '- End with a brief follow-up suggestion (1 line) when natural\n' +
     '- REMEMBER facts the user shares — reference them later in conversation\n\n' +
+
     'SELF-REFLECTION (Evaluator-Optimizer Loop):\n' +
     '- Before finalizing any response, run this internal check:\n' +
     '  1. Is this accurate based on tool data and my knowledge?\n' +
@@ -22,29 +27,34 @@ var Agent = (function () {
     '- For code: trace edge cases mentally, check null/undefined paths\n' +
     '- For research: check for contradictions between sources\n' +
     '- If uncertain about something, state your confidence level explicitly\n\n' +
+
     'OBSERVATION & ITERATION:\n' +
     '- If a tool returns unexpected data, note it explicitly and adapt your response\n' +
     '- If tool data seems wrong or incomplete, say so and provide what you can\n' +
     '- When the user corrects you, acknowledge immediately and adjust\n' +
     '- If a previous approach failed, explicitly try a different angle\n' +
     '- Tool errors are not failures — they are signals to try alternative approaches\n\n' +
+
     'TASK DECOMPOSITION (Reasoning/Planning):\n' +
     '- For requests with 3+ steps: outline the plan first, then execute step by step\n' +
     '- Label steps clearly (Step 1, Step 2, etc.)\n' +
     '- When steps depend on each other, show the dependency chain\n' +
     '- After all steps, provide a synthesized summary of the complete result\n' +
     '- For multi-tool queries: use results from one tool to inform the next\n\n' +
+
     'CONTEXT MANAGEMENT (Memory System):\n' +
     '- Prioritize recent and most relevant context in long conversations\n' +
     '- Acknowledge topic transitions briefly before switching\n' +
     '- Revisit earlier topics by summarizing what was discussed first\n' +
     '- When memory entries exist, integrate them naturally into responses\n\n' +
+
     'TOOL USAGE PROTOCOL:\n' +
     '- When tool results are provided, ALWAYS incorporate the specific data\n' +
     '- Never ignore tool results — they are ground truth for your response\n' +
     '- If multiple tools return data, cross-reference and synthesize\n' +
     '- Format tool data clearly with bold key figures';
 
+  /* ── Mode Definitions ─────────────────────────────── */
   var MODES = {
     general: {
       label: 'Chat',
@@ -95,13 +105,14 @@ var Agent = (function () {
     }
   };
 
+  /* ── Thinking Steps per Mode ──────────────────────── */
   var THINK = {
     general: ['Understanding...', 'Checking tools...', 'Reasoning...', 'Writing...'],
     research: ['Identifying angles...', 'Fetching data...', 'Cross-referencing...', 'Analyzing...', 'Structuring...', 'Synthesizing...'],
     coding: ['Understanding...', 'Planning architecture...', 'Writing code...', 'Reviewing logic...', 'Testing edge cases...', 'Improving...']
   };
 
-  /* ── Tokenize helper — splits on word boundaries ── */
+  /* ── Tokenizer ────────────────────────────────────── */
   function tokenize(s) {
     return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; });
   }
@@ -116,25 +127,30 @@ var Agent = (function () {
     return true;
   }
 
-  /* Memory System */
+  /* ══════════════════════════════════════════════════════
+   *  MEMORY SYSTEM — localStorage-backed key-value store
+   * ══════════════════════════════════════════════════════ */
   var Mem = {
     _k: 'os_mem',
+
     _g: function () {
       try { return JSON.parse(localStorage.getItem(this._k) || '{}'); }
       catch (e) { return {}; }
     },
+
     _s: function (d) {
       try { localStorage.setItem(this._k, JSON.stringify(d)); }
-      catch (e) { /* storage full — silently fail */ }
+      catch (e) { /* storage full — silent fail */ }
     },
+
     remember: function (k, v, c) {
       var d = this._g();
       d[k.toLowerCase()] = { v: v, c: c || 'fact', t: Date.now() };
       this._s(d);
     },
+
     forget: function (k) {
       var d = this._g();
-      /* Delete any key whose name contains the query tokens */
       var kt = tokenize(k);
       var keys = Object.keys(d);
       for (var i = 0; i < keys.length; i++) {
@@ -142,16 +158,15 @@ var Agent = (function () {
       }
       this._s(d);
     },
+
     recall: function (q) {
       var d = this._g(), r = [];
       var keys = Object.keys(d);
       for (var i = 0; i < keys.length; i++) {
         var k = keys[i];
-        /* Match if query tokens appear in the key OR in the stored value */
         var inKey = tokensMatch(q, k);
         var inVal = tokensMatch(q, d[k].v);
         if (inKey || inVal) {
-          /* Score: more token matches = higher relevance */
           var qt = tokenize(q), score = 0;
           var kt2 = tokenize(k);
           for (var j = 0; j < qt.length; j++) { if (kt2.indexOf(qt[j]) !== -1) score += 2; }
@@ -162,12 +177,15 @@ var Agent = (function () {
       }
       return r.sort(function (a, b) { return b.score - a.score || b.time - a.time; });
     },
+
     count: function () {
       return Object.keys(this._g()).length;
     },
+
     clear: function () {
       localStorage.removeItem(this._k);
     },
+
     context: function () {
       var d = this._g(), e = Object.entries(d);
       if (!e.length) return '';
@@ -177,8 +195,8 @@ var Agent = (function () {
       });
       return c + '[END MEMORY]\n';
     },
+
     matchMemory: function (t) {
-      /* Only true RECALL queries — "remember" removed to avoid conflict with store */
       var triggers = [
         'do you remember', 'you remember', 'what did i tell', 'what have i told',
         'what do you know about me', 'my name is', 'i live in', 'i work at',
@@ -189,7 +207,6 @@ var Agent = (function () {
       for (var i = 0; i < triggers.length; i++) {
         if (l.indexOf(triggers[i]) !== -1) return true;
       }
-      /* Also check if query tokens match any stored key */
       var d = this._g(), keys = Object.keys(d);
       for (var j = 0; j < keys.length; j++) {
         if (tokensMatch(t, keys[j])) return true;
@@ -198,10 +215,13 @@ var Agent = (function () {
     }
   };
 
-  /* Route: determine which tools to call and memory actions */
+  /* ══════════════════════════════════════════════════════
+   *  ROUTER — determines tool calls + memory actions
+   * ══════════════════════════════════════════════════════ */
   function route(text) {
     var matches = [], seen = {};
     var tools = Agent._tools || [];
+
     tools.forEach(function (t) {
       var q = t.match(text);
       if (q && !seen[t.id]) {
@@ -210,31 +230,36 @@ var Agent = (function () {
       }
     });
 
-    /* Check store FIRST — before recall, so "remember that..." saves instead of recalls */
+    /* Store — checked FIRST so "remember that..." saves instead of recalls */
     var rem = text.match(/(?:remember|note|save|store|keep in mind|don'?t forget)\s+(?:that|this|the fact)?\s*:?\s*(.+)/i);
     if (rem) return { tools: matches, memStore: rem[1].trim().slice(0, 300) };
 
-    /* Check forget SECOND */
+    /* Forget — checked SECOND */
     var fgt = text.match(/(?:forget|delete|remove)\s+(?:about\s+)?(?:the\s+)?(?:memory\s+)?(.+)/i);
     if (fgt) return { tools: matches, memForget: fgt[1].trim().slice(0, 100) };
 
-    /* Check recall LAST — only if no store/forget intent detected */
+    /* Recall — checked LAST, only if no store/forget intent */
     if (Mem.matchMemory(text)) return { tools: [], memRecall: true };
 
     return { tools: matches, memRecall: false };
   }
 
+  /* ── Active Mode ──────────────────────────────────── */
   var mode = 'general';
 
+  /* ── Public API ───────────────────────────────────── */
   return {
     modes: MODES,
     memory: Mem,
     route: route,
     _tools: null,
+
     registerTools: function (t) { this._tools = t; },
     getTools: function () { return this._tools || []; },
+
     setMode: function (m) { if (MODES[m]) mode = m; },
     getMode: function () { return mode; },
+
     sys: function () { return MODES[mode].prompt + Mem.context(); },
     label: function () { return MODES[mode].label; },
     steps: function () { return THINK[mode]; }
