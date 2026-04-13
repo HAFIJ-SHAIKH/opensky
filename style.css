@@ -2016,3 +2016,13 @@ body {
   background: rgba(255,255,255,.12);
   color: var(--w);
 }
+
+/* Tool images from Wikipedia etc */
+.tool-img {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  margin: 8px 0;
+  display: block;
+  border: 1px solid var(--bd);
+}
