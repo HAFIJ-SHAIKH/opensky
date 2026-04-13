@@ -1,8 +1,9 @@
+/* ═══════════════════════════════════════════════════════
+ * tools.js — 27 tools with timeout, smart matchers,
+ * chaining hints, and robust error handling
+ * ═══════════════════════════════════════════════════════ */
 (function () {
-  /* ═══════════════════════════════════════════════════════
-   * tools.js — 27 tools with timeout, better matchers,
-   * smart chaining, and robust error handling
-   * ═══════════════════════════════════════════════════════ */
+  'use strict';
 
   /* ── Fetch with 8s timeout ───────────────────────── */
   function tfetch(url, opts) {
@@ -15,14 +16,14 @@
   /* ── Safe JSON parse helper ──────────────────────── */
   function sj(r) { return r.json().catch(function () { return {}; }); }
 
-  /* ── Simple hash for generating memory keys ───────── */
+  /* ── Simple hash for memory keys ──────────────────── */
   function simpleHash(s) {
     var h = 0;
     for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
     return 'mem_' + Math.abs(h).toString(36);
   }
 
-  /* ── Country name list for smart matching ────────── */
+  /* ── Country list for smart matching ──────────────── */
   var COUNTRIES = [
     'japan','china','india','usa','uk','united states','united kingdom','germany','france',
     'brazil','canada','australia','russia','mexico','south korea','italy','spain','netherlands',
@@ -36,15 +37,14 @@
 
   function isCountry(s) {
     var low = s.toLowerCase().trim();
-    /* Exact match first */
     for (var i = 0; i < COUNTRIES.length; i++) {
       if (low === COUNTRIES[i]) return true;
     }
-    /* Word-boundary match: input must appear as a whole word in country name, or vice versa */
     for (var j = 0; j < COUNTRIES.length; j++) {
+      var escaped = COUNTRIES[j].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       var re1 = new RegExp('(?:^|\\s)' + low.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:\\s|$)', 'i');
       if (re1.test(COUNTRIES[j])) return true;
-      var re2 = new RegExp('(?:^|\\s)' + COUNTRIES[j].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:\\s|$)', 'i');
+      var re2 = new RegExp('(?:^|\\s)' + escaped + '(?:\\s|$)', 'i');
       if (re2.test(low)) return true;
     }
     return false;
@@ -60,27 +60,29 @@
     return a;
   }
 
-  /* ── UUID fallback for older browsers ────────────── */
+  /* ── UUID v4 ─────────────────────────────────────── */
   function genUUID() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       return crypto.randomUUID();
     }
     var buf = new Uint8Array(16);
     crypto.getRandomValues(buf);
-    buf[6] = (buf[6] & 0x0f) | 0x40; /* version 4 */
-    buf[8] = (buf[8] & 0x3f) | 0x80; /* variant */
+    buf[6] = (buf[6] & 0x0f) | 0x40;
+    buf[8] = (buf[8] & 0x3f) | 0x80;
     var hex = Array.from(buf).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
     return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
+  /* ═══════════════════════════════════════════════════
+   *  TOOL DEFINITIONS
+   * ═══════════════════════════════════════════════════ */
+
   var T = [
 
-    /* ═══════════════════════════════════════════════════
-     * LOCATION / GEOGRAPHY (most specific first)
-     * ═══════════════════════════════════════════════════ */
+    /* ── LOCATION / GEOGRAPHY ──────────────────────── */
 
     {
-      id: 'weather', name: 'Weather', icon: '\u{2600}\u{FE0F}',
+      id: 'weather', name: 'Weather', icon: '\u2600\uFE0F',
       match: function (t) {
         var m = t.match(/(?:weather|temperature|forecast|rain(?:ing)?|snow(?:ing)?|humid|wind(?:y)?|climate|hot|cold|warm|freezing)\s+(?:in|at|for|of|like)?\s*(.+?)(?:\s+(?:and|but|also|plus|right now|today|tonight|tomorrow)\s|$)/i);
         if (m && m[1].trim().length > 1) return m[1].replace(/[?.!,]+$/, '').trim();
@@ -107,7 +109,7 @@
     },
 
     {
-      id: 'country', name: 'Countries', icon: '\u{1F30D}',
+      id: 'country', name: 'Countries', icon: '\uD83C\uDF0D',
       match: function (t) {
         var m = t.match(/(?:population|capital|currency|language|gdp|area|region|time ?zone|flag|independence|continent)\s+(?:of|for|in)\s+(?:the\s+)?(.+?)(?:\s+(?:and|but|also)\s|$)/i);
         if (m) return m[1].replace(/[?.!,]+$/, '').trim();
@@ -140,7 +142,7 @@
     },
 
     {
-      id: 'ip', name: 'IP Location', icon: '\u{1F4CD}',
+      id: 'ip', name: 'IP Location', icon: '\uD83D\uDCCD',
       match: function (t) { return /(?:my\s+ip|ip\s*address|where\s*am\s*i|my\s*location|my\s*city|my\s*country|detect\s*my)/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://ipapi.co/json/')
@@ -159,7 +161,7 @@
     },
 
     {
-      id: 'uni', name: 'Universities', icon: '\u{1F393}',
+      id: 'uni', name: 'Universities', icon: '\uD83C\uDF93',
       match: function (t) { var m = t.match(/(?:universit(?:y|ies)|college|school)\s+(?:in|at|of)\s+(.+)/i); return m ? m[1].replace(/[?.!,]+$/, '').trim() : null; },
       exec: function (q) {
         return tfetch('https://universities.hipolabs.com/search?country=' + encodeURIComponent(q) + '&limit=5')
@@ -177,12 +179,10 @@
       }
     },
 
-    /* ═══════════════════════════════════════════════════
-     * FINANCE
-     * ═══════════════════════════════════════════════════ */
+    /* ── FINANCE ───────────────────────────────────── */
 
     {
-      id: 'crypto', name: 'Crypto', icon: '\u{1F4B0}',
+      id: 'crypto', name: 'Crypto', icon: '\uD83D\uDCB0',
       match: function (t) {
         var known = [
           'bitcoin','btc','ethereum','eth','solana','sol','dogecoin','doge','xrp','ripple',
@@ -221,7 +221,7 @@
     },
 
     {
-      id: 'exchange', name: 'Exchange', icon: '\u{1F4B1}',
+      id: 'exchange', name: 'Exchange', icon: '\uD83D\uDCB1',
       match: function (t) {
         var m = t.match(/(\d+\.?\d*)\s*([A-Za-z]{3})\s*(?:to|in|into|=|to\s+equal)\s*([A-Za-z]{3})/);
         if (m) return m[0].trim();
@@ -242,7 +242,7 @@
               if (rates[from] && rates[to]) {
                 var result = amount * (rates[to] / rates[from]);
                 var rate = rates[to] / rates[from];
-                return '**' + amount.toLocaleString() + ' ' + from + '** = **' + result.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' ' + to + '**' +
+                return '**' + amount.toLocaleString() + ' ' + from + '** = **' + result.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + to + '**' +
                   '\nRate: 1 ' + from + ' = ' + rate.toFixed(4) + ' ' + to +
                   '\nInverse: 1 ' + to + ' = ' + (1 / rate).toFixed(4) + ' ' + from;
               }
@@ -256,12 +256,10 @@
       }
     },
 
-    /* ═══════════════════════════════════════════════════
-     * KNOWLEDGE
-     * ═══════════════════════════════════════════════════ */
+    /* ── KNOWLEDGE ─────────────────────────────────── */
 
     {
-      id: 'wiki', name: 'Wikipedia', icon: '\u{1F50D}',
+      id: 'wiki', name: 'Wikipedia', icon: '\uD83D\uDD0D',
       match: function (t) {
         var m = t.match(/(?:wikipedia|wiki(?:pedia)?)\s+(?:about\s+|on\s+|for\s+)?(.+)/i);
         if (m) return m[1].replace(/[?.!,]+$/, '').trim().replace(/^(the|a|an)\s+/i, '');
@@ -286,7 +284,7 @@
     },
 
     {
-      id: 'dict', name: 'Dictionary', icon: '\u{1F4D6}',
+      id: 'dict', name: 'Dictionary', icon: '\uD83D\uDCD6',
       match: function (t) {
         var m = t.match(/(?:define|definition|meaning (?:of|for)|what does ["']?(\w+)["']?\s+mean)\s*(?:"?\s*([^"']+)\s*"?)?/i);
         if (m) return (m[2] || m[1] || '').replace(/[?.!,]+$/, '').trim() || null;
@@ -299,7 +297,7 @@
           .then(function (d) {
             if (d.title) return 'Definition not found for: ' + q;
             var e = d[0], out = '**' + e.word + '**' + (e.phonetic ? '  ' + e.phonetic : '');
-            if (e.phonetics) e.phonetics.forEach(function (p) { if (p.audio) out += ' [\u{1F50A}](' + p.audio + ')'; });
+            if (e.phonetics) e.phonetics.forEach(function (p) { if (p.audio) out += ' [\uD83D\uDD0A](' + p.audio + ')'; });
             e.meanings.forEach(function (m) {
               out += '\n\n**' + m.partOfSpeech + '**';
               m.definitions.slice(0, 3).forEach(function (d, i) {
@@ -316,7 +314,7 @@
     },
 
     {
-      id: 'trivia', name: 'Trivia', icon: '\u{2753}',
+      id: 'trivia', name: 'Trivia', icon: '\u2753',
       match: function (t) { return /(?:trivia|quiz\s*question|test\s*me|random\s*question|quiz\s*me)/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://opentdb.com/api.php?amount=1&type=multiple')
@@ -325,9 +323,7 @@
             if (!d.results || !d.results.length) return 'Could not fetch trivia.';
             var q = d.results[0];
             var qt = q.question.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-            /* Only use the correct plural field — filter out nulls */
-            var a = [q.correct_answer].concat(q.incorrect_answers || [])
-              .filter(function (x) { return x != null && x !== ''; });
+            var a = [q.correct_answer].concat(q.incorrect_answers || []).filter(function (x) { return x != null && x !== ''; });
             a = shuffle(a);
             return '**' + q.category + '** (' + q.difficulty + ')\n\n' + qt + '\n\n' +
               a.map(function (x, i) { return String.fromCharCode(65 + i) + ') ' + x; }).join('\n') +
@@ -337,12 +333,10 @@
       }
     },
 
-    /* ═══════════════════════════════════════════════════
-     * ENTERTAINMENT
-     * ═══════════════════════════════════════════════════ */
+    /* ── ENTERTAINMENT ─────────────────────────────── */
 
     {
-      id: 'joke', name: 'Joke', icon: '\u{1F604}',
+      id: 'joke', name: 'Joke', icon: '\uD83D\uDE04',
       match: function (t) { return /(?:tell|say|give|have|know)\s*(?:me\s+)?(?:a\s+)?(?:joke|something funny|make me laugh|funny)/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://official-joke-api.appspot.com/random_joke')
@@ -353,7 +347,7 @@
     },
 
     {
-      id: 'chuck', name: 'Chuck Norris', icon: '\u{1F4AA}',
+      id: 'chuck', name: 'Chuck Norris', icon: '\uD83D\uDCAA',
       match: function (t) { return /chuck\s*norris/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://api.chucknorris.io/jokes/random')
@@ -364,7 +358,7 @@
     },
 
     {
-      id: 'quote', name: 'Quote', icon: '\u{1F4AC}',
+      id: 'quote', name: 'Quote', icon: '\uD83D\uDCAC',
       match: function (t) { return /(?:quote|motivat|inspirat|wisdom|saying|famous\s*quote)/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://api.quotable.io/random')
@@ -380,7 +374,7 @@
     },
 
     {
-      id: 'cat', name: 'Cat Fact', icon: '\u{1F431}',
+      id: 'cat', name: 'Cat Fact', icon: '\uD83D\uDC31',
       match: function (t) { return /cat\s*fact|fact\s*(?:about|on)\s*cat|tell.*cat/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://catfact.ninja/fact')
@@ -391,7 +385,7 @@
     },
 
     {
-      id: 'dog', name: 'Dog Image', icon: '\u{1F436}',
+      id: 'dog', name: 'Dog Image', icon: '\uD83D\uDC36',
       match: function (t) { return /(?:show|get|random|see|send)\s*(?:me\s+)?(?:a\s+)?(?:dog|puppy|pup)\s*(?:image|pic|photo)?/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://dog.ceo/api/breeds/image/random')
@@ -402,7 +396,7 @@
     },
 
     {
-      id: 'pokemon', name: 'Pok\u00E9dex', icon: '\u{1F3FE}',
+      id: 'pokemon', name: 'Pok\u00E9dex', icon: '\uD83E\uDDFE',
       match: function (t) { var m = t.match(/(?:pokemon|pok[e\u00E9]dex|pok[e\u00E9]mon)\s+(?:info\s+)?(?:about\s+)?(?:#?)(\w+)/i); return m ? m[1].replace(/[?.!,]+$/, '').trim() : null; },
       exec: function (q) {
         return tfetch('https://pokeapi.co/api/v2/pokemon/' + encodeURIComponent(q.toLowerCase()))
@@ -420,7 +414,7 @@
     },
 
     {
-      id: 'bored', name: 'Activity', icon: '\u{1F3AE}',
+      id: 'bored', name: 'Activity', icon: '\uD83C\uDFAE',
       match: function (t) { return /(?:bored|nothing to do|what should i do|suggest.*activity|give me.*to do|i'm bored)/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://bored-api.appbrewery.com/random')
@@ -431,7 +425,7 @@
     },
 
     {
-      id: 'advice', name: 'Advice', icon: '\u{1F4A1}',
+      id: 'advice', name: 'Advice', icon: '\uD83D\uDCA1',
       match: function (t) { return /(?:give me|need|want|have|i\s+want|i\s+need)?\s*(?:an?)?\s*advice(?:\s+(?:on|about|for))?/i.test(t) && !/(?:joke|quote|fact|trivia)/i.test(t) ? 'r' : null; },
       exec: function () {
         return tfetch('https://api.adviceslip.com/advice')
@@ -441,12 +435,10 @@
       }
     },
 
-    /* ═══════════════════════════════════════════════════
-     * SOCIAL / PROFILES
-     * ═══════════════════════════════════════════════════ */
+    /* ── SOCIAL / PROFILES ─────────────────────────── */
 
     {
-      id: 'github', name: 'GitHub', icon: '\u{1F4BB}',
+      id: 'github', name: 'GitHub', icon: '\uD83D\uDCBB',
       match: function (t) {
         var m = t.match(/(?:github|gh)(?:\.com)?\s*(?:user|profile|repo|stats?|of|for|about)?\s*@?(\w[\w-]{0,38})/i);
         return m ? m[1] : null;
@@ -463,7 +455,7 @@
             if (d.location) out += '\nLocation: ' + d.location;
             if (d.company) out += '\nCompany: ' + d.company;
             if (d.blog) out += '\nWebsite: ' + d.blog;
-            out += '\nJoined: ' + (d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', {year:'numeric',month:'long'}) : 'N/A');
+            out += '\nJoined: ' + (d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A');
             if (d.avatar_url) out += '\n![Avatar](' + d.avatar_url + ')';
             return out;
           })
@@ -472,7 +464,7 @@
     },
 
     {
-      id: 'meal', name: 'Recipe', icon: '\u{1F35A}',
+      id: 'meal', name: 'Recipe', icon: '\uD83C\uDF5A',
       match: function (t) { var m = t.match(/(?:recipe|how to (?:make|cook|prepare))\s+(?:for|of|with)?\s*(.+)/i); return m ? m[1].replace(/[?.!,]+$/, '').trim() : null; },
       exec: function (q) {
         return tfetch('https://www.themealdb.com/api/json/v1/1/search.php?s=' + encodeURIComponent(q))
@@ -499,12 +491,10 @@
       }
     },
 
-    /* ═══════════════════════════════════════════════════
-     * UTILITIES
-     * ═══════════════════════════════════════════════════ */
+    /* ── UTILITIES ─────────────────────────────────── */
 
     {
-      id: 'math', name: 'Calculate', icon: '\u{1F4CA}',
+      id: 'math', name: 'Calculate', icon: '\uD83D\uDCCA',
       match: function (t) {
         var m = t.match(/(?:calculate|compute|solve|eval|what(?:'s| is))\s+(.+?)(?:\s*[=?\uFF1F]\s*(.+))?$/i);
         if (m) return { expr: m[1].trim(), extra: m[2] || null };
@@ -525,7 +515,7 @@
     },
 
     {
-      id: 'password', name: 'Password', icon: '\u{1F511}',
+      id: 'password', name: 'Password', icon: '\uD83D\uDD11',
       match: function (t) { return /(?:generate|create|make|random)\s*(?:a\s+)?(?:strong\s+|secure\s+)?(?:password|passphrase|secret)/i.test(t) ? 'r' : null; },
       exec: function () {
         var lower = 'abcdefghijkmnopqrstuvwxyz', upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ', nums = '23456789', syms = '!@#$%^&*_-+=?';
@@ -537,14 +527,12 @@
         pw += syms[Math.floor(Math.random() * syms.length)];
         for (var i = 4; i < 18; i++) pw += all[Math.floor(Math.random() * all.length)];
         pw = shuffle(pw.split('')).join('');
-        var strength = 'Strong';
-        if (pw.length < 12) strength = 'Moderate';
-        return '**Generated password:** `' + pw + '`\nLength: ' + pw.length + ' characters | Strength: ' + strength + '\nContains: lowercase, uppercase, numbers, symbols';
+        return '**Generated password:** `' + pw + '`\nLength: ' + pw.length + ' characters | Strength: Strong\nContains: lowercase, uppercase, numbers, symbols';
       }
     },
 
     {
-      id: 'date', name: 'Date/Time', icon: '\u{1F4C5}',
+      id: 'date', name: 'Date/Time', icon: '\uD83D\uDCC5',
       match: function (t) { return /(?:current|what(?:'s| is) the)?\s*(?:date|time|day|month|year|weekday|today)/i.test(t) ? new Date().toISOString() : null; },
       exec: function () {
         var dt = new Date();
@@ -558,13 +546,13 @@
     },
 
     {
-      id: 'uuid', name: 'UUID', icon: '\u{1F195}',
+      id: 'uuid', name: 'UUID', icon: '\uD83D\uDD95',
       match: function (t) { return /(?:generate|create|get|new)\s*(?:a\s+)?(?:uuid|guid|unique\s*id)/i.test(t) ? 'r' : null; },
       exec: function () { return '**' + genUUID() + '**\nVersion 4 UUID, randomly generated.'; }
     },
 
     {
-      id: 'lorem', name: 'Lorem Ipsum', icon: '\u{1F4DD}',
+      id: 'lorem', name: 'Lorem Ipsum', icon: '\uD83D\uDCDD',
       match: function (t) { return /(?:lorem\s*ipsum|placeholder\s*text|dummy\s*text|filler\s*text|sample\s*text)/i.test(t) ? 'r' : null; },
       exec: function () {
         return 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n\nExcepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.';
@@ -572,7 +560,7 @@
     },
 
     {
-      id: 'num', name: 'Number Fact', icon: '\u{1F522}',
+      id: 'num', name: 'Number Fact', icon: '\uD83D\uDD22',
       match: function (t) { var m = t.match(/(?:fact|trivia)\s+(?:about\s+)?(?:the\s+)?number\s+(\d+)/i); return m ? m[1] : null; },
       exec: function (n) {
         return tfetch('https://numbersapi.com/' + n + '?json')
@@ -582,12 +570,10 @@
       }
     },
 
-    /* ═══════════════════════════════════════════════════
-     * NEW TOOLS
-     * ═══════════════════════════════════════════════════ */
+    /* ── EXTRA UTILITIES ───────────────────────────── */
 
     {
-      id: 'textstats', name: 'Text Stats', icon: '\u{1F4CA}',
+      id: 'textstats', name: 'Text Stats', icon: '\uD83D\uDCCA',
       match: function (t) {
         var m = t.match(/(?:word\s*count|character\s*count|text\s*stats?|analyze\s*(?:this\s+)?text|count\s*(?:words?|chars?|characters?|letters?|sentences?|paragraphs?))\s*(?:of|for|in)?\s*(.+)/i);
         return m ? m[1].trim().slice(0, 2000) : null;
@@ -614,7 +600,7 @@
     },
 
     {
-      id: 'color', name: 'Random Color', icon: '\u{1F3A8}',
+      id: 'color', name: 'Random Color', icon: '\uD83C\uDFA8',
       match: function (t) { return /(?:random\s*color|generate\s*color|color\s*generator|give me\s*a\s*color|pick\s*a\s*color)/i.test(t) ? 'r' : null; },
       exec: function () {
         var hex = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
@@ -633,13 +619,12 @@
         var brightness = (r * 299 + g * 587 + b * 114) / 1000;
         var textColor = brightness > 128 ? '#000' : '#fff';
         return '**' + hex.toUpperCase() + '**\nRGB: ' + rgb + '\nHSL: ' + hsl +
-          '\nBrightness: ' + Math.round(brightness) + '/255\nContrast text: ' + textColor +
-          '\n[Preview](# "' + hex + '")';
+          '\nBrightness: ' + Math.round(brightness) + '/255\nContrast text: ' + textColor;
       }
     },
 
     {
-      id: 'hash', name: 'Hash Generator', icon: '\u{1F510}',
+      id: 'hash', name: 'Hash Generator', icon: '\uD83D\uDD10',
       match: function (t) {
         var m = t.match(/(?:hash|sha|md5)\s+(?:of|for|generate)\s*(.+)/i);
         return m ? m[1].trim().slice(0, 500) : null;
@@ -655,14 +640,16 @@
             '\n\n**SHA-256:** `' + hex(bufs[0]) + '`' +
             '\n**SHA-1:** `' + hex(bufs[1]) + '`' +
             '\n**SHA-512:** `' + hex(bufs[2]) + '`';
-        }).catch(function () { return 'Could not generate hashes — crypto.subtle may not be available in this context.'; });
+        }).catch(function () { return 'Could not generate hashes — crypto.subtle not available in this context.'; });
       }
     }
   ];
 
-  Agent.registerTools(T);
+  /* ═══════════════════════════════════════════════════
+   *  EXECUTION + FORMATTING
+   * ═══════════════════════════════════════════════════ */
 
-  /* ── Execute matched tools in parallel ────────────── */
+  /* Run matched tools in parallel */
   function execTools(matches) {
     return Promise.all(matches.map(function (m) {
       return m.tool.exec(m.query)
@@ -675,7 +662,7 @@
     }));
   }
 
-  /* ── Format tool results for AI context ───────────── */
+  /* Format results for AI system prompt context */
   function fmtCtx(results) {
     if (!results.length) return '';
     var c = '\n\n[TOOL RESULTS \u2014 you MUST use these specific facts and data in your response. Do NOT ignore or paraphrase loosely \u2014 use exact numbers and names]:\n';
@@ -690,11 +677,10 @@
     return c;
   }
 
-  /* ── Handle memory store/recall/forget ────────────── */
+  /* Handle memory store/recall/forget from route result */
   function handleMem(rr, text) {
     var ctx = '';
     if (rr.memStore) {
-      /* Use a hash of the value as key — avoids collisions from first-4-words approach */
       var key = simpleHash(rr.memStore);
       Agent.memory.remember(key, rr.memStore, 'fact');
       ctx = '\n[SYSTEM: Stored to memory: "' + rr.memStore.slice(0, 80) + '". Acknowledge briefly if the user explicitly asked to remember it.]\n';
@@ -718,6 +704,8 @@
     return ctx;
   }
 
+  /* ── Register everything on Agent ────────────────── */
+  Agent.registerTools(T);
   Agent.execTools = execTools;
   Agent.toolCtx = fmtCtx;
   Agent.handleMem = handleMem;
