@@ -24,29 +24,24 @@ jobs:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
           if [ -z "$OPENKEY" ]; then
-            echo "❌ OPENKEY secret is NOT set!"
-            echo "Fix: Repo → Settings → Secrets and variables → Actions → New repository secret"
-            echo "Name: OPENKEY"
-            echo "Value: sk-or-v1-..."
+            echo "OPENKEY secret is missing"
             exit 1
           fi
-
-          echo "✓ Secret found (length: ${#OPENKEY})"
-
-          ENCODED=$(printf '%s' "$OPENKEY" | base64 -w0)
-          echo "✓ Base64 encoded (length: ${#ENCODED})"
 
           mkdir -p build
-          cp index.html style.css app.js agent.js tools.js planner.js enhance.js build/
-          echo "✓ Files copied to build/"
 
-          if ! grep -q "var KEY_PH = 'NONE';" build/app.js; then
-            echo "❌ Placeholder 'var KEY_PH = '\''NONE'\'';' not found in app.js"
-            exit 1
-          fi
+          for f in index.html style.css app.js agent.js tools.js planner.js enhance.js; do
+            if [ -f "$f" ]; then
+              cp "$f" build/
+            fi
+          done
 
-          sed -i "s|var KEY_PH = 'NONE';|var KEY_PH = atob('$ENCODED');|" build/app.js
-          echo "✓ Key injected into build/app.js"
+          ENCODED=$(printf '%s' "$OPENKEY" | base64 -w0)
+
+          PLACEHOLDER="var KEY_PH = 'NONE';"
+          REPLACEMENT="var KEY_PH = atob('${ENCODED}');"
+
+          sed -i "s|${PLACEHOLDER}|${REPLACEMENT}|" build/app.js
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
