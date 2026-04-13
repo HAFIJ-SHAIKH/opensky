@@ -19,42 +19,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: List repo files
-        run: echo "=== All files in repo root ===" && ls -la *.html *.css *.js 2>/dev/null; echo "=== Done ==="
+      - name: See everything in repo
+        run: |
+          echo "========================================="
+          echo "EVERY FILE IN REPO ROOT:"
+          echo "========================================="
+          ls -la
+          echo "========================================="
+          echo "ALL FOLDERS:"
+          echo "========================================="
+          find . -maxdepth 1 -type d
+          echo "========================================="
 
-      - name: Inject key and build
+      - name: Build
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
+          set +e
+
           mkdir -p build
 
-          cp *.html *.css *.js build/ 2>/dev/null
-          echo "Files copied to build/:"
+          echo ">>> Copying all files to build..."
+          for item in *; do
+            if [ "$item" != "build" ] && [ "$item" != ".git" ] && [ "$item" != ".github" ]; then
+              cp -r "$item" build/ 2>/dev/null
+              echo "    Copied: $item"
+            fi
+          done
+
+          echo ">>> Removing non-web files from build..."
+          cd build
+          rm -rf .git .github 2>/dev/null
+          rm -f *.yml *.yaml *.md *.txt *.json *.lock *.map 2>/dev/null
+          rm -f script.js _inject.py package.json package-lock.json 2>/dev/null
+          rm -f node_modules 2>/dev/null
+          cd ..
+
+          echo ">>> What is in build/ now:"
           ls -la build/
 
-          echo "Writing inject script..."
-          cat > _inject.py << 'PYEOF'
+          echo ">>> Writing Python inject script..."
+          cat > build/_inject.py << 'PYEOF'
           import os, sys, re, glob
 
           key = os.environ.get("OPENKEY", "").strip()
-          print("Key length: " + str(len(key)))
+          print("OPENKEY length: " + str(len(key)))
 
           if len(key) < 10:
-              print("STOPPED: OPENKEY secret is empty or too short")
+              print("STOPPED: OPENKEY is empty or too short")
               sys.exit(1)
 
+          os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
           injected = False
-          for path in sorted(glob.glob("build/*.js")):
+          for path in sorted(glob.glob("*.js")):
               try:
                   with open(path, "r", encoding="utf-8-sig") as f:
-                      raw = f.read()
-                  if "KEY_PH" not in raw:
-                      continue
-                  with open(path, "r", encoding="utf-8-sig") as f:
                       content = f.read()
+                  if "KEY_PH" not in content:
+                      continue
                   m = re.search(r"var\s+KEY_PH\s*=\s*['\"]NONE['\"]\s*;", content)
                   if not m:
-                      print("FOUND KEY_PH in " + path + " but regex did not match")
+                      print("WARNING: KEY_PH in " + path + " but regex failed")
                       for i, line in enumerate(content.split("\n")):
                           if "KEY_PH" in line:
                               print("  Line " + str(i) + ": " + repr(line))
@@ -63,48 +89,54 @@ jobs:
                   new_content = content[:m.start()] + "var KEY_PH = '" + escaped + "';" + content[m.end():]
                   with open(path, "w", encoding="utf-8") as f:
                       f.write(new_content)
-                  with open(path, "r", encoding="utf-8") as f:
-                      verify = f.read()
-                  if "NONE" in verify.split("KEY_PH")[1][:20]:
-                      print("ERROR: NONE still present after write in " + path)
-                      sys.exit(1)
-                  if key[:8] not in verify:
-                      print("ERROR: Key not found after write in " + path)
-                      sys.exit(1)
-                  print("INJECTED into: " + path)
+                  print("INJECTED key into: " + path)
                   injected = True
               except Exception as e:
-                  print("ERROR reading " + path + ": " + str(e))
+                  print("ERROR on " + path + ": " + str(e))
 
           if not injected:
               print("STOPPED: No JS file with KEY_PH placeholder found")
               sys.exit(1)
 
-          print("INJECTION COMPLETE")
+          print("KEY INJECTION COMPLETE")
           PYEOF
 
-          python3 _inject.py
-          rm -f _inject.py
+          echo ">>> Running inject..."
+          python3 build/_inject.py
+          EXIT_CODE=$?
+          rm -f build/_inject.py
 
-      - name: Final verification
-        run: |
-          echo "=== Final build contents ==="
-          ls -la build/
-          echo ""
-          echo "=== JS files with KEY_PH ==="
-          grep -n "KEY_PH" build/*.js || echo "NONE FOUND"
-          echo ""
-          echo "=== Checking NONE is gone ==="
-          if grep -q "'NONE'" build/*.js; then
-              echo "FAILED: NONE still present"
+          if [ $EXIT_CODE -ne 0 ]; then
+              echo "STOPPED: Inject failed with exit code $EXIT_CODE"
               exit 1
           fi
-          echo "NONE is gone - GOOD"
-          echo ""
-          echo "=== File counts ==="
-          echo "HTML: $(ls build/*.html 2>/dev/null | wc -l)"
-          echo "CSS:  $(ls build/*.css 2>/dev/null | wc -l)"
-          echo "JS:   $(ls build/*.js 2>/dev/null | wc -l)"
+
+          echo ">>> Verifying NONE is removed..."
+          if grep -rq "'NONE'" build/*.js 2>/dev/null; then
+              echo "STOPPED: NONE still found in build files"
+              exit 1
+          fi
+          echo "NONE removed: OK"
+
+      - name: Final check
+        run: |
+          echo "========================================="
+          echo "FINAL BUILD CONTENTS:"
+          echo "========================================="
+          ls -la build/
+          echo "========================================="
+          echo "FILE COUNTS:"
+          echo "  HTML: $(find build/ -maxdepth 1 -name '*.html' | wc -l)"
+          echo "  CSS:  $(find build/ -maxdepth 1 -name '*.css' | wc -l)"
+          echo "  JS:   $(find build/ -maxdepth 1 -name '*.js' | wc -l)"
+          echo "========================================="
+          JS_COUNT=$(find build/ -maxdepth 1 -name '*.js' | wc -l)
+          if [ "$JS_COUNT" -lt 4 ]; then
+            echo "PROBLEM: Expected at least 4 JS files"
+            exit 1
+          fi
+          echo "BUILD LOOKS GOOD"
+          echo "========================================="
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
