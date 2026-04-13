@@ -105,7 +105,7 @@ body {
   margin-top: 1px;
 }
 
-/* Mode Selector */
+/* Mode Selector — pill buttons with active slide */
 .mode-selector {
   display: flex;
   gap: 2px;
@@ -132,6 +132,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  position: relative;
 }
 
 .mode-btn:hover {
@@ -141,10 +142,10 @@ body {
 .mode-btn.active {
   background: var(--b4);
   color: var(--w);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, .4), inset 0 0.5px 0 rgba(255, 255, 255, .04);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .04);
 }
 
-/* New Chat Button — refined */
+/* New Chat Button — clean outline with icon alignment */
 .new-btn {
   margin: 4px 12px 4px;
   padding: 8px 11px;
@@ -158,19 +159,19 @@ body {
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: all .25s var(--e);
+  gap: 7px;
+  transition: all .2s var(--e);
 }
 
 .new-btn:hover {
   border-color: var(--g2);
   color: var(--g1);
   background: var(--b2);
-  transform: translateY(-1px);
 }
 
 .new-btn:active {
-  transform: translateY(0) scale(.98);
+  transform: scale(.97);
+  transition: transform .1s;
 }
 
 /* Chat List */
@@ -224,30 +225,33 @@ body {
   color: var(--g1);
 }
 
-/* Delete button — always faintly visible */
+/* Delete button — ghost until hover */
 .chat-item-del {
-  opacity: .2;
+  opacity: 0;
   background: none;
   border: none;
   color: var(--g3);
   cursor: pointer;
-  padding: 2px;
+  padding: 3px 4px;
   border-radius: 4px;
   font-size: 9px;
   transition: all .2s var(--e);
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 
 .chat-item:hover .chat-item-del {
-  opacity: .8;
+  opacity: .35;
 }
 
 .chat-item-del:hover {
-  color: #ff4444;
-  background: rgba(255, 68, 68, .08);
   opacity: 1 !important;
+  color: #ff4444;
+  background: rgba(255, 68, 68, .1);
 }
 
 /* Sidebar Footer */
@@ -295,7 +299,7 @@ body {
   min-width: 0;
 }
 
-/* Topbar — tighter alignment */
+/* Topbar */
 .topbar {
   padding: 11px 16px;
   border-bottom: 1px solid var(--bd);
@@ -318,7 +322,7 @@ body {
   font-size: 8.5px;
   color: var(--g3);
   background: var(--b3);
-  padding: 3px 7px;
+  padding: 3px 8px;
   border-radius: 7px;
   font-weight: 600;
   text-transform: uppercase;
@@ -330,12 +334,12 @@ body {
   flex: 1;
 }
 
-/* Icon Buttons — slightly larger hit target */
+/* Icon Buttons — refined with subtle ring on hover */
 .icon-btn {
   width: 30px;
   height: 30px;
   border-radius: var(--rx);
-  border: 1px solid var(--bd);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--g3);
   cursor: pointer;
@@ -348,12 +352,11 @@ body {
 .icon-btn:hover {
   color: var(--g1);
   background: var(--b3);
-  border-color: var(--bd2);
-  transform: translateY(-1px);
+  border-color: var(--bd);
 }
 
 .icon-btn:active {
-  transform: translateY(0) scale(.93);
+  transform: scale(.9);
 }
 
 /* ═══ CHAT AREA ═══ */
@@ -427,8 +430,9 @@ body {
   animation: fadeUp .5s var(--o) .4s forwards;
 }
 
+/* Suggestion buttons — softer, card-like */
 .sugg {
-  padding: 10px 12px;
+  padding: 11px 14px;
   background: var(--b2);
   border: 1px solid var(--bd);
   border-radius: var(--rs);
@@ -437,7 +441,7 @@ body {
   font-family: var(--f);
   font-size: 11px;
   color: var(--g3);
-  line-height: 1.4;
+  line-height: 1.45;
   transition: all .25s var(--e);
 }
 
@@ -446,11 +450,12 @@ body {
   color: var(--g1);
   background: var(--b3);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
 }
 
 .sugg:active {
   transform: translateY(0) scale(.97);
+  transition: transform .1s;
 }
 
 /* ═══ ANIMATIONS ═══ */
@@ -537,19 +542,12 @@ body {
   gap: 8px;
   line-height: 1.35;
   animation: fadeUp .4s var(--o) .05s both;
-  cursor: pointer;
-  transition: all .25s var(--e);
-}
-
-.key-banner:hover {
-  border-color: var(--bd3);
-  color: var(--g1);
-  background: var(--b3);
+  cursor: default;
 }
 
 .key-banner code {
   background: var(--b4);
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: 3px;
   font-family: var(--m);
   font-size: 9.5px;
@@ -747,7 +745,7 @@ body {
   background: var(--b0);
   border: 1px solid var(--bd);
   color: var(--g3);
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 3px;
   font-size: 8.5px;
   font-family: var(--f);
@@ -774,11 +772,12 @@ body {
   background: var(--bd3);
 }
 
+/* AI Action Buttons — cleaner row */
 .msg-ai-footer {
   padding-left: 23px;
-  margin-top: 4px;
+  margin-top: 5px;
   display: flex;
-  gap: 3px;
+  gap: 4px;
   opacity: 0;
   transition: opacity .25s var(--e);
 }
@@ -789,26 +788,30 @@ body {
 
 .msg-ai-action {
   background: none;
-  border: 1px solid var(--bd);
+  border: 1px solid transparent;
   color: var(--g3);
-  padding: 2px 7px;
-  border-radius: 3px;
-  font-size: 8.5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 9px;
   font-family: var(--f);
   cursor: pointer;
-  transition: all .15s;
+  transition: all .15s var(--e);
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .msg-ai-action:hover {
   color: var(--g1);
-  border-color: var(--bd2);
+  border-color: var(--bd);
   background: var(--b3);
 }
 
-/* ═══ TOOL STATUS — tighter pills ═══ */
+.msg-ai-action:active {
+  transform: scale(.95);
+}
+
+/* ═══ TOOL STATUS ═══ */
 .tool-status {
   display: flex;
   flex-wrap: wrap;
@@ -821,7 +824,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 7px;
+  padding: 2px 8px;
   background: var(--b2);
   border: 1px solid var(--bd);
   border-radius: 10px;
@@ -841,7 +844,7 @@ body {
   color: #ff4444;
 }
 
-/* ═══ PLAN CARD — redesigned with dots + connector + progress bar ═══ */
+/* ═══ PLAN CARD ═══ */
 .plan-card {
   padding-left: 23px;
   margin-bottom: 10px;
@@ -886,7 +889,6 @@ body {
   position: relative;
 }
 
-/* Vertical connector line between dots */
 .plan-steps::before {
   content: '';
   position: absolute;
@@ -991,21 +993,21 @@ body {
   100% { background-position: -200% 0; }
 }
 
-/* ═══ FOLLOW-UPS ═══ */
+/* ═══ FOLLOW-UP CHIPS — softer, pill-shaped ═══ */
 .follow-ups {
   padding-left: 23px;
   margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 6px;
   animation: fadeUp .3s var(--o) .1s both;
 }
 
 .fu-chip {
-  padding: 4px 10px;
+  padding: 5px 12px;
   background: var(--b2);
   border: 1px solid var(--bd);
-  border-radius: 14px;
+  border-radius: 16px;
   font-size: 10px;
   color: var(--g3);
   cursor: pointer;
@@ -1018,14 +1020,13 @@ body {
   border-color: var(--bd2);
   color: var(--g1);
   background: var(--b3);
-  transform: translateY(-1px);
 }
 
 .fu-chip:active {
   transform: scale(.95);
 }
 
-/* ═══ ATTACH MENU — wider, deeper shadow, accent on hover ═══ */
+/* ═══ ATTACH MENU — refined items ═══ */
 .attach-wrap {
   position: relative;
 }
@@ -1039,8 +1040,8 @@ body {
   border: 1px solid var(--bd2);
   border-radius: var(--rs);
   padding: 4px;
-  min-width: 150px;
-  box-shadow: 0 10px 36px rgba(0, 0, 0, .65);
+  min-width: 155px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .7);
   z-index: 30;
   animation: fadeScale .2s var(--sp);
 }
@@ -1051,7 +1052,7 @@ body {
 
 .attach-opt {
   width: 100%;
-  padding: 9px 12px;
+  padding: 8px 12px;
   background: none;
   border: none;
   border-left: 2px solid transparent;
@@ -1069,6 +1070,10 @@ body {
 .attach-opt:hover {
   background: var(--b4);
   border-left-color: var(--g2);
+}
+
+.attach-opt:active {
+  background: var(--bd2);
 }
 
 /* ═══ INPUT AREA ═══ */
@@ -1149,7 +1154,7 @@ body {
   gap: 1px;
   background: var(--b1);
   border: 1px solid var(--bd);
-  border-radius: 13px;
+  border-radius: 14px;
   padding: 4px;
   transition: all .3s var(--e);
 }
@@ -1159,11 +1164,12 @@ body {
   box-shadow: 0 0 0 2px var(--g4), 0 2px 20px rgba(0, 0, 0, .2);
 }
 
+/* Input icon buttons — attach, mic inside input */
 .input-icon-btn {
   width: 32px;
   height: 32px;
   min-width: 32px;
-  border-radius: 7px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--g3);
@@ -1212,12 +1218,12 @@ body {
   color: var(--g4);
 }
 
-/* ═══ SEND / MIC BUTTON ═══ */
+/* ═══ SEND BUTTON — primary, prominent ═══ */
 .send-btn {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  border-radius: 9px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 10px;
   border: none;
   background: var(--w);
   color: #000;
@@ -1225,13 +1231,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all .25s var(--e);
+  transition: all .2s var(--e);
   flex-shrink: 0;
 }
 
 .send-btn:hover {
-  opacity: .85;
-  transform: scale(1.04);
+  opacity: .88;
+  transform: scale(1.03);
 }
 
 .send-btn:active {
@@ -1251,7 +1257,7 @@ body {
 
 .send-btn.stop:hover {
   opacity: .9;
-  transform: scale(1.04);
+  transform: scale(1.03);
 }
 
 .send-btn.mic-mode {
@@ -1265,7 +1271,6 @@ body {
   border-color: var(--bd2);
   background: var(--b3);
   opacity: 1;
-  transform: translateY(-1px);
 }
 
 .send-btn.mic-mode:active {
@@ -1273,7 +1278,7 @@ body {
 }
 
 .send-btn svg {
-  transition: transform .25s var(--sp), opacity .15s;
+  transition: transform .2s var(--sp), opacity .15s;
 }
 
 .send-btn:active svg {
@@ -1453,7 +1458,7 @@ body {
   opacity: .5;
 }
 
-/* ═══ THINKING TEXT — non-active steps heavily faded ═══ */
+/* ═══ THINKING TEXT ═══ */
 .thinking-text {
   padding-left: 23px;
   font-size: 10.5px;
