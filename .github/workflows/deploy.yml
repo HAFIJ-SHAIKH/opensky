@@ -27,15 +27,19 @@ jobs:
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
+          echo "→ Creating build folder..."
           mkdir -p build
-          cp index.html build/ 2>/dev/null || true
-          cp style.css build/ 2>/dev/null || true
+          echo "→ Copying client files to build/..."
+          cp index.html build/
+          cp style.css build/
           cp app.js build/
           cp agent.js build/
           cp tools.js build/
           cp planner.js build/
           cp enhance.js build/
+          echo "→ Running key injection..."
           node script.js
+          echo "→ Build finished successfully."
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
