@@ -24,64 +24,82 @@ jobs:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
           python3 << 'PYEOF'
-          import os, sys
+          import os, sys, re, glob, shutil
 
           key = os.environ.get("OPENKEY", "")
-
-          if not key or len(key) < 10:
-              print("FAILED: OPENKEY secret is missing or too short (length: " + str(len(key)) + ")")
+          if not key or len(key.strip()) < 10:
+              print("FAILED: OPENKEY secret is missing or too short")
               sys.exit(1)
-
+          key = key.strip()
           print("Secret found. Length: " + str(len(key)))
 
-          import shutil
           os.makedirs("build", exist_ok=True)
 
-          for f in ["index.html", "style.css", "app.js", "agent.js", "tools.js", "planner.js", "enhance.js"]:
-              if os.path.exists(f):
+          copied = 0
+          for pattern in ["*.html", "*.css", "*.js"]:
+              for f in glob.glob(pattern):
                   shutil.copy2(f, "build/" + f)
+                  copied += 1
                   print("Copied: " + f)
-              else:
-                  print("WARNING: " + f + " not found, skipping")
 
-          # utf-8-sig removes hidden BOM characters if your editor added them
-          with open("build/app.js", "r", encoding="utf-8-sig") as file:
-              content = file.read()
-
-          new_content = None
-
-          # Check for single quotes
-          if "var KEY_PH = 'NONE';" in content:
-              new_content = content.replace("var KEY_PH = 'NONE';", "var KEY_PH = '" + key + "';")
-              print("Matched: Single quotes with NONE")
-
-          # Check for double quotes
-          elif 'var KEY_PH = "NONE";' in content:
-              new_content = content.replace('var KEY_PH = "NONE";', 'var KEY_PH = "' + key + '";')
-              print("Matched: Double quotes with NONE")
-
-          # Check for empty single quotes
-          elif "var KEY_PH = '';" in content:
-              new_content = content.replace("var KEY_PH = '';", "var KEY_PH = '" + key + "';")
-              print("Matched: Empty single quotes")
-
-          # Check for empty double quotes
-          elif 'var KEY_PH = "";' in content:
-              new_content = content.replace('var KEY_PH = "";', 'var KEY_PH = "' + key + '";')
-              print("Matched: Empty double quotes")
-
-          if new_content:
-              with open("build/app.js", "w", encoding="utf-8") as file:
-                  file.write(new_content)
-              print("SUCCESS: Key injected into build/app.js")
-          else:
-              print("FAILED: Could not find var KEY_PH in app.js")
-              print("Showing first 20 lines of app.js for debugging:")
-              for i, line in enumerate(content.split('\n')[:20]):
-                  print(str(i) + ": " + line)
+          if copied == 0:
+              print("FAILED: No html/css/js files found in repo root")
               sys.exit(1)
 
+          print("Total files copied: " + str(copied))
+
+          js_files = glob.glob("build/*.js")
+          target = None
+          for f in js_files:
+              with open(f, "r", encoding="utf-8-sig") as fh:
+                  if "KEY_PH" in fh.read():
+                      target = f
+                      break
+
+          if not target:
+              print("FAILED: No JS file contains KEY_PH")
+              sys.exit(1)
+
+          print("Found KEY_PH in: " + target)
+
+          with open(target, "r", encoding="utf-8-sig") as fh:
+              content = fh.read()
+
+          pattern = r"var\s+KEY_PH\s*=\s*['\"]NONE['\"]\s*;"
+          match = re.search(pattern, content)
+          if not match:
+              print("FAILED: KEY_PH placeholder not found")
+              sys.exit(1)
+
+          safe_key = key.replace("\\", "\\\\").replace("'", "\\'")
+          new_content = content[:match.start()] + "var KEY_PH = '" + safe_key + "';" + content[match.end():]
+
+          with open(target, "w", encoding="utf-8") as fh:
+              fh.write(new_content)
+
+          with open(target, "r", encoding="utf-8") as fh:
+              verify = fh.read()
+
+          if "NONE" in verify.split("KEY_PH")[1][:30]:
+              print("FAILED: NONE still in file after injection")
+              sys.exit(1)
+
+          print("Key injected successfully")
+          print("ALL PASSED")
           PYEOF
+
+      - name: Verify build
+        run: |
+          echo "Files in build/:"
+          ls -la build/
+          JS_COUNT=$(find build/ -name "*.js" | wc -l)
+          CSS_COUNT=$(find build/ -name "*.css" | wc -l)
+          HTML_COUNT=$(find build/ -name "*.html" | wc -l)
+          echo "JS: $JS_COUNT | CSS: $CSS_COUNT | HTML: $HTML_COUNT"
+          if [ "$JS_COUNT" -lt 4 ]; then echo "FAILED: Too few JS files"; exit 1; fi
+          if [ "$CSS_COUNT" -lt 1 ]; then echo "FAILED: No CSS file"; exit 1; fi
+          if [ "$HTML_COUNT" -lt 1 ]; then echo "FAILED: No HTML file"; exit 1; fi
+          echo "Build verified OK"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
