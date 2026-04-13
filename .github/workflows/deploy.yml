@@ -19,47 +19,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Build
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
-          mkdir -p build
-          cp index.html style.css app.js agent.js tools.js planner.js enhance.js build/
+          python3 << 'PYEOF'
+          import os, sys
 
-          cat > _inject.js << 'ENDSCRIPT'
-          const fs = require('fs');
-          const key = process.env.OPENKEY;
+          key = os.environ.get("OPENKEY", "")
 
-          if (!key || key.trim().length < 10) {
-            console.error('FAILED: OPENKEY secret is missing or too short');
-            console.error('Length received: ' + (key ? key.length : 0));
-            process.exit(1);
-          }
+          if not key or len(key) < 10:
+              print("FAILED: OPENKEY secret is missing or too short (got length " + str(len(key)) + ")")
+              print("Fix: Go to Repo > Settings > Secrets and variables > Actions > Repository secrets")
+              print("Click 'New repository secret', Name: OPENKEY, Value: your-key-here")
+              sys.exit(1)
 
-          let content = fs.readFileSync('build/app.js', 'utf8');
-          const placeholder = "var KEY_PH = 'NONE';";
+          print("Secret found. Length: " + str(len(key)))
 
-          if (content.indexOf(placeholder) === -1) {
-            console.error('FAILED: Placeholder not found in build/app.js');
-            process.exit(1);
-          }
+          import shutil
+          os.makedirs("build", exist_ok=True)
 
-          const encoded = Buffer.from(key.trim()).toString('base64');
-          const replacement = "var KEY_PH = atob('" + encoded + "');";
-          content = content.replace(placeholder, replacement);
-          fs.writeFileSync('build/app.js', content);
+          for f in ["index.html", "style.css", "app.js", "agent.js", "tools.js", "planner.js", "enhance.js"]:
+              if os.path.exists(f):
+                  shutil.copy2(f, "build/" + f)
+                  print("Copied: " + f)
+              else:
+                  print("WARNING: " + f + " not found, skipping")
 
-          console.log('SUCCESS: Key injected into build/app.js');
-          console.log('Original key length: ' + key.trim().length);
-          console.log('Base64 encoded length: ' + encoded.length);
-          ENDSCRIPT
+          with open("build/app.js", "r") as file:
+              content = file.read()
 
-          node _inject.js
+          placeholder = "var KEY_PH = 'NONE';"
+
+          if placeholder not in content:
+              print("FAILED: Could not find 'var KEY_PH = NONE;' in build/app.js")
+              sys.exit(1)
+
+          new_content = content.replace(placeholder, "var KEY_PH = '" + key + "';")
+
+          with open("build/app.js", "w") as file:
+              file.write(new_content)
+
+          print("SUCCESS: Key injected into build/app.js")
+          PYEOF
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
