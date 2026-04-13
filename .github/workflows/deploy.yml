@@ -19,100 +19,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug — Check Secret
-        env:
-          OPENKEY: ${{ secrets.OPENKEY }}
-        run: |
-          echo "=== SECRET DIAGNOSTIC ==="
-          echo "Is env var SET at all?"
-          if [ -z "${OPENKEY+x}" ]; then
-              echo "NO — env var does not exist (secret not found or wrong name)"
-          else
-              echo "YES — env var exists"
-          fi
-          echo "Length: ${#OPENKEY}"
-          echo "First 3 chars: ${OPENKEY:0:3}"
-          echo "Last 3 chars: ${OPENKEY: -3}"
-          echo ""
-          echo "=== CHECKING ALTERNATE NAMES ==="
-          echo "OPEN_KEY length: ${#OPEN_KEY}"
-          echo "openkey length: ${#openkey}"
-          echo "OPENROUTER_KEY length: ${#OPENROUTER_KEY}"
-          echo "API_KEY length: ${#API_KEY}"
-          echo "=========================="
-
       - name: Build
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
           python3 << 'PYEOF'
-          import os, sys, re
+          import os, re, shutil, sys
 
-          key = os.environ.get("OPENKEY")
-          print("=== PYTHON DIAGNOSTIC ===")
-          print("os.environ.get('OPENKEY') type: " + str(type(key)))
-          print("os.environ.get('OPENKEY') value: " + repr(key))
-          print("Length: " + str(len(key) if key else 0))
-          print("=========================")
-
-          if not key or len(key) < 10:
-              print("FAILED: OPENKEY secret is missing or too short")
-              print("")
-              print("POSSIBLE FIXES:")
-              print("1. Go to: repo Settings → Secrets and variables → Actions")
-              print("2. Make sure secret name is EXACTLY: OPENKEY")
-              print("   (not openkey, not OPEN_KEY, not OpenKey)")
-              print("3. Click the secret → verify the VALUE field is not empty")
-              print("4. Make sure you clicked 'Add secret' after pasting the key")
-              sys.exit(1)
-
-          print("Secret found. Length: " + str(len(key)))
-
-          import shutil
+          key = os.environ.get("OPENKEY", "")
           os.makedirs("build", exist_ok=True)
 
-          for f in ["index.html", "style.css", "app.js", "agent.js", "tools.js", "planner.js", "enhance.js"]:
+          files = [
+              "index.html", "style.css", "app.js",
+              "agent.js", "tools.js", "planner.js", "enhance.js"
+          ]
+          for f in files:
               if os.path.exists(f):
                   shutil.copy2(f, "build/" + f)
-                  print("Copied: " + f)
+                  print("OK  " + f)
               else:
-                  print("WARNING: " + f + " not found, skipping")
+                  print("MISS  " + f)
 
-          with open("build/app.js", "r", encoding="utf-8-sig") as file:
-              content = file.read()
+          with open("build/app.js", "r", encoding="utf-8-sig") as fh:
+              code = fh.read()
 
-          pattern = r"""var\s+KEY_PH\s*=\s*['"](?:NONE|)['"]\s*;"""
-          match = re.search(pattern, content)
-
-          if not match:
-              print("FAILED: Could not find KEY_PH assignment")
-              for i, line in enumerate(content.split('\n')):
-                  if 'KEY_PH' in line:
-                      print("  Line " + str(i) + ": " + repr(line))
-              sys.exit(1)
-
-          print("Found KEY_PH at position " + str(match.start()) + "-" + str(match.end()))
-
-          safe_key = key.replace("'", "\\'")
-          replacement = "var KEY_PH = '" + safe_key + "';"
-          new_content = content[:match.start()] + replacement + content[match.end():]
-
-          with open("build/app.js", "w", encoding="utf-8") as file:
-              file.write(new_content)
-
-          with open("build/app.js", "r", encoding="utf-8") as file:
-              verify = file.read()
-              if "var KEY_PH = '" + safe_key + "';" in verify:
-                  print("VERIFIED: Key injected successfully")
+          if key and len(key) >= 10:
+              escaped = key.replace("\\", "\\\\").replace("'", "\\'")
+              new_code = re.sub(
+                  r"var\s+KEY_PH\s*=\s*['\"][NONE]*['\"]\s*;",
+                  "var KEY_PH = '" + escaped + "';",
+                  code
+              )
+              if new_code != code:
+                  with open("build/app.js", "w", encoding="utf-8") as fh:
+                      fh.write(new_code)
+                  print("INJECTED  key length=" + str(len(key)))
               else:
-                  print("WARNING: Verification failed")
-                  sys.exit(1)
+                  print("WARN  regex matched nothing")
+                  for i, ln in enumerate(code.split("\n")):
+                      if "KEY_PH" in ln:
+                          print("  line " + str(i) + ": " + repr(ln))
+          else:
+              print("NO_SECRET  manual entry mode active")
 
           PYEOF
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: './build'
+          path: ./build
       - id: deployment
         uses: actions/deploy-pages@v4
