@@ -29,38 +29,64 @@ jobs:
           key = os.environ.get("OPENKEY", "")
           os.makedirs("build", exist_ok=True)
 
-          files = [
-              "index.html", "style.css", "app.js",
-              "agent.js", "tools.js", "planner.js", "enhance.js"
-          ]
-          for f in files:
+          for f in ["index.html","style.css","app.js","agent.js","tools.js","planner.js","enhance.js"]:
               if os.path.exists(f):
-                  shutil.copy2(f, "build/" + f)
-                  print("OK  " + f)
+                  shutil.copy2(f, "build/"+f)
+                  print("COPY  "+f)
               else:
-                  print("MISS  " + f)
+                  print("MISS  "+f)
 
-          with open("build/app.js", "r", encoding="utf-8-sig") as fh:
-              code = fh.read()
+          with open("build/app.js","r",encoding="utf-8-sig") as fh:
+              raw = fh.read()
 
-          if key and len(key) >= 10:
-              escaped = key.replace("\\", "\\\\").replace("'", "\\'")
-              new_code = re.sub(
-                  r"var\s+KEY_PH\s*=\s*['\"][NONE]*['\"]\s*;",
-                  "var KEY_PH = '" + escaped + "';",
-                  code
-              )
-              if new_code != code:
-                  with open("build/app.js", "w", encoding="utf-8") as fh:
-                      fh.write(new_code)
-                  print("INJECTED  key length=" + str(len(key)))
-              else:
-                  print("WARN  regex matched nothing")
-                  for i, ln in enumerate(code.split("\n")):
-                      if "KEY_PH" in ln:
-                          print("  line " + str(i) + ": " + repr(ln))
+          # Debug: show every line that mentions KEY_PH
+          for i, ln in enumerate(raw.split("\n")):
+              if "KEY_PH" in ln:
+                  print("FOUND line "+str(i)+": "+repr(ln.strip()))
+
+          # Strategy 1: broad regex
+          pat = r"var\s+KEY_PH\s*=\s*['\"][^'\"]*['\"]\s*;"
+          m = re.search(pat, raw)
+
+          code = raw
+          replaced = False
+
+          if m:
+              print("REGEX matched: "+repr(m.group(0)))
+              safe = key.replace("\\","\\\\").replace("'","\\'")
+              code = raw[:m.start()] + "var KEY_PH = '" + safe + "';" + raw[m.end():]
+              replaced = True
           else:
-              print("NO_SECRET  manual entry mode active")
+              # Strategy 2: line-by-line fallback
+              print("REGEX missed — trying line-by-line fallback")
+              lines = raw.split("\n")
+              for i, ln in enumerate(lines):
+                  if "KEY_PH" in ln and "=" in ln and ";" in ln:
+                      safe = key.replace("\\","\\\\").replace("'","\\'")
+                      lines[i] = "  var KEY_PH = '" + safe + "';"
+                      replaced = True
+                      print("FALLBACK replaced line "+str(i))
+                      break
+              code = "\n".join(lines)
+
+          if not replaced:
+              print("FATAL: KEY_PH not found in app.js at all")
+              sys.exit(1)
+
+          with open("build/app.js","w",encoding="utf-8") as fh:
+              fh.write(code)
+
+          # Verify
+          with open("build/app.js","r",encoding="utf-8") as fh:
+              out = fh.read()
+              if key and len(key) >= 10:
+                  if key in out and "'NONE'" not in out.split("KEY_PH")[1][:30]:
+                      print("VERIFY OK — key injected, length="+str(len(key)))
+                  else:
+                      print("VERIFY FAIL — key missing from output")
+                      sys.exit(1)
+              else:
+                  print("VERIFY SKIP — no secret, manual mode active")
 
           PYEOF
 
