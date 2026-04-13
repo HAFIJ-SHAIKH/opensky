@@ -49,8 +49,8 @@
   if (!$msgs || !$inp || !$btn) { console.error('opensky: missing DOM'); return; }
 
     /* ── Key (decoded from base64 by sed in deploy.yml) ─ */
-  function getKey() { return KEY_PH === 'NONE' ? '' : KEY_PH; }
-  function hasKey() { return KEY_PH !== 'NONE' && KEY_PH.length > 10; }
+  function getKey() { return KEY_PH; }
+function hasKey() { return KEY_PH !== 'NONE'; }
 
   /* ── HTML escape — also defined locally in planner.txt (intentional, separate IIFE scope) ── */
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
