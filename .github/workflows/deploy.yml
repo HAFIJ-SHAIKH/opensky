@@ -24,15 +24,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Copy files
+      - name: Build
+        env:
+          OPENKEY: ${{ secrets.OPENKEY }}
         run: |
           mkdir -p build
           cp index.html style.css app.js agent.js tools.js planner.js enhance.js build/
 
-      - name: Inject API Key
-        env:
-          OPENKEY: ${{ secrets.OPENKEY }}
-        run: node -e "
+          cat > _inject.js << 'ENDSCRIPT'
           const fs = require('fs');
           const key = process.env.OPENKEY;
 
@@ -43,7 +42,7 @@ jobs:
           }
 
           let content = fs.readFileSync('build/app.js', 'utf8');
-          const placeholder = \"var KEY_PH = 'NONE';\";
+          const placeholder = "var KEY_PH = 'NONE';";
 
           if (content.indexOf(placeholder) === -1) {
             console.error('FAILED: Placeholder not found in build/app.js');
@@ -51,27 +50,16 @@ jobs:
           }
 
           const encoded = Buffer.from(key.trim()).toString('base64');
-          const replacement = \"var KEY_PH = atob('\" + encoded + \"');\";
+          const replacement = "var KEY_PH = atob('" + encoded + "');";
           content = content.replace(placeholder, replacement);
           fs.writeFileSync('build/app.js', content);
 
           console.log('SUCCESS: Key injected into build/app.js');
-          console.log('Key length: ' + key.trim().length);
-          console.log('Base64 length: ' + encoded.length);
-        "
+          console.log('Original key length: ' + key.trim().length);
+          console.log('Base64 encoded length: ' + encoded.length);
+          ENDSCRIPT
 
-      - name: Verify injection
-        run: |
-          if grep -q "var KEY_PH = 'NONE';" build/app.js; then
-            echo "FAILED: Placeholder was NOT replaced"
-            exit 1
-          fi
-          if grep -q "atob(" build/app.js; then
-            echo "VERIFIED: Key injection confirmed in build/app.js"
-          else
-            echo "FAILED: atob() not found, injection did not work"
-            exit 1
-          fi
+          node _inject.js
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
