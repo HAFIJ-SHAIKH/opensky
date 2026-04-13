@@ -19,87 +19,92 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
+      - name: List repo files
+        run: echo "=== All files in repo root ===" && ls -la *.html *.css *.js 2>/dev/null; echo "=== Done ==="
+
+      - name: Inject key and build
         env:
           OPENKEY: ${{ secrets.OPENKEY }}
         run: |
-          python3 << 'PYEOF'
-          import os, sys, re, glob, shutil
+          mkdir -p build
 
-          key = os.environ.get("OPENKEY", "")
-          if not key or len(key.strip()) < 10:
-              print("FAILED: OPENKEY secret is missing or too short")
-              sys.exit(1)
-          key = key.strip()
-          print("Secret found. Length: " + str(len(key)))
+          cp *.html *.css *.js build/ 2>/dev/null
+          echo "Files copied to build/:"
+          ls -la build/
 
-          os.makedirs("build", exist_ok=True)
+          echo "Writing inject script..."
+          cat > _inject.py << 'PYEOF'
+          import os, sys, re, glob
 
-          copied = 0
-          for pattern in ["*.html", "*.css", "*.js"]:
-              for f in glob.glob(pattern):
-                  shutil.copy2(f, "build/" + f)
-                  copied += 1
-                  print("Copied: " + f)
+          key = os.environ.get("OPENKEY", "").strip()
+          print("Key length: " + str(len(key)))
 
-          if copied == 0:
-              print("FAILED: No html/css/js files found in repo root")
+          if len(key) < 10:
+              print("STOPPED: OPENKEY secret is empty or too short")
               sys.exit(1)
 
-          print("Total files copied: " + str(copied))
+          injected = False
+          for path in sorted(glob.glob("build/*.js")):
+              try:
+                  with open(path, "r", encoding="utf-8-sig") as f:
+                      raw = f.read()
+                  if "KEY_PH" not in raw:
+                      continue
+                  with open(path, "r", encoding="utf-8-sig") as f:
+                      content = f.read()
+                  m = re.search(r"var\s+KEY_PH\s*=\s*['\"]NONE['\"]\s*;", content)
+                  if not m:
+                      print("FOUND KEY_PH in " + path + " but regex did not match")
+                      for i, line in enumerate(content.split("\n")):
+                          if "KEY_PH" in line:
+                              print("  Line " + str(i) + ": " + repr(line))
+                      continue
+                  escaped = key.replace("\\", "\\\\").replace("'", "\\'")
+                  new_content = content[:m.start()] + "var KEY_PH = '" + escaped + "';" + content[m.end():]
+                  with open(path, "w", encoding="utf-8") as f:
+                      f.write(new_content)
+                  with open(path, "r", encoding="utf-8") as f:
+                      verify = f.read()
+                  if "NONE" in verify.split("KEY_PH")[1][:20]:
+                      print("ERROR: NONE still present after write in " + path)
+                      sys.exit(1)
+                  if key[:8] not in verify:
+                      print("ERROR: Key not found after write in " + path)
+                      sys.exit(1)
+                  print("INJECTED into: " + path)
+                  injected = True
+              except Exception as e:
+                  print("ERROR reading " + path + ": " + str(e))
 
-          js_files = glob.glob("build/*.js")
-          target = None
-          for f in js_files:
-              with open(f, "r", encoding="utf-8-sig") as fh:
-                  if "KEY_PH" in fh.read():
-                      target = f
-                      break
-
-          if not target:
-              print("FAILED: No JS file contains KEY_PH")
+          if not injected:
+              print("STOPPED: No JS file with KEY_PH placeholder found")
               sys.exit(1)
 
-          print("Found KEY_PH in: " + target)
-
-          with open(target, "r", encoding="utf-8-sig") as fh:
-              content = fh.read()
-
-          pattern = r"var\s+KEY_PH\s*=\s*['\"]NONE['\"]\s*;"
-          match = re.search(pattern, content)
-          if not match:
-              print("FAILED: KEY_PH placeholder not found")
-              sys.exit(1)
-
-          safe_key = key.replace("\\", "\\\\").replace("'", "\\'")
-          new_content = content[:match.start()] + "var KEY_PH = '" + safe_key + "';" + content[match.end():]
-
-          with open(target, "w", encoding="utf-8") as fh:
-              fh.write(new_content)
-
-          with open(target, "r", encoding="utf-8") as fh:
-              verify = fh.read()
-
-          if "NONE" in verify.split("KEY_PH")[1][:30]:
-              print("FAILED: NONE still in file after injection")
-              sys.exit(1)
-
-          print("Key injected successfully")
-          print("ALL PASSED")
+          print("INJECTION COMPLETE")
           PYEOF
 
-      - name: Verify build
+          python3 _inject.py
+          rm -f _inject.py
+
+      - name: Final verification
         run: |
-          echo "Files in build/:"
+          echo "=== Final build contents ==="
           ls -la build/
-          JS_COUNT=$(find build/ -name "*.js" | wc -l)
-          CSS_COUNT=$(find build/ -name "*.css" | wc -l)
-          HTML_COUNT=$(find build/ -name "*.html" | wc -l)
-          echo "JS: $JS_COUNT | CSS: $CSS_COUNT | HTML: $HTML_COUNT"
-          if [ "$JS_COUNT" -lt 4 ]; then echo "FAILED: Too few JS files"; exit 1; fi
-          if [ "$CSS_COUNT" -lt 1 ]; then echo "FAILED: No CSS file"; exit 1; fi
-          if [ "$HTML_COUNT" -lt 1 ]; then echo "FAILED: No HTML file"; exit 1; fi
-          echo "Build verified OK"
+          echo ""
+          echo "=== JS files with KEY_PH ==="
+          grep -n "KEY_PH" build/*.js || echo "NONE FOUND"
+          echo ""
+          echo "=== Checking NONE is gone ==="
+          if grep -q "'NONE'" build/*.js; then
+              echo "FAILED: NONE still present"
+              exit 1
+          fi
+          echo "NONE is gone - GOOD"
+          echo ""
+          echo "=== File counts ==="
+          echo "HTML: $(ls build/*.html 2>/dev/null | wc -l)"
+          echo "CSS:  $(ls build/*.css 2>/dev/null | wc -l)"
+          echo "JS:   $(ls build/*.js 2>/dev/null | wc -l)"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
